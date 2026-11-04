@@ -82,7 +82,7 @@ fun HomeTab(openRef: (Ref) -> Unit, openSearch: () -> Unit, openNotes: () -> Uni
     val scheme = MaterialTheme.colorScheme
     val today = LocalDate.now()
     val vRef = Ref.fromKey(DailyVerses[(today.dayOfYear - 1) % DailyVerses.size])!!
-    val vText = remember(vRef, s.bible, version) { app.bibles.verseText(s.bible, vRef) }
+    val vText by produceState<String?>(null, vRef, s.bible, version) { value = withContext(Dispatchers.IO) { app.bibles.verseText(s.bible, vRef) } }
     val info = remember(s.bible, version) { app.bibles.info(s.bible) }
     val abbr = info?.abbreviation ?: s.bible
     val last = Ref.fromKey(s.lastRef) ?: Ref("JHN", 1)

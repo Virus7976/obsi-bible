@@ -155,10 +155,6 @@ class AudioEngine(private val app: ObsiBibleApp) {
     /** Plays [ref]'s chapter in [bible], from [fromVerse] (0 = the start). */
     fun play(bible: String, ref: Ref, fromVerse: Int = 0) {
         val src = pickSource(bible)
-        if (src !is Source.Recorded && !app.bibles.allowsVoice(bible)) {
-            _ui.update { it.copy(error = "This Bible has no recording, and its licence does not allow a computer voice.", loading = false) }
-            return
-        }
         if (!app.bibles.isOnline(bible)) return start(bible, ref, fromVerse, src)
         _ui.update { it.copy(loading = true, error = null) }
         main.launch {
@@ -217,10 +213,10 @@ class AudioEngine(private val app: ObsiBibleApp) {
         return when {
             kind == "narrator" && Narrators.forBible(bible).isNotEmpty() ->
                 Source.Recorded(Narrators.forBible(bible).firstOrNull { it.id == id } ?: Narrators.forBible(bible)[0])
-            kind == "cloud" && s.cloudKey.isNotBlank() && s.cloudRegion.isNotBlank() -> Source.Cloud(s.cloudKey, s.cloudRegion, id.ifBlank { s.cloudVoice })
+            kind == "cloud" && s.cloudKey.isNotBlank() && s.cloudRegion.isNotBlank() && app.bibles.allowsCloudVoice(bible, s.cloudForOnline) -> Source.Cloud(s.cloudKey, s.cloudRegion, id.ifBlank { s.cloudVoice })
             kind == "phone" -> Source.Phone(id)
             Narrators.forBible(bible).isNotEmpty() -> Source.Recorded(Narrators.forBible(bible)[0])
-            else -> Source.Phone("")
+            else -> Source.Phone(s.phoneVoice)
         }
     }
 

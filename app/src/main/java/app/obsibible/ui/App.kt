@@ -1,5 +1,20 @@
 package app.obsibible.ui
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.runtime.SideEffect
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.Crossfade
+import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.automirrored.filled.StickyNote2
+import androidx.compose.material.icons.filled.Book
+import androidx.compose.material.icons.filled.Home
 import android.Manifest
 import android.os.Build
 import androidx.activity.compose.BackHandler
@@ -76,12 +91,12 @@ import kotlinx.coroutines.withContext
 val LocalApp = staticCompositionLocalOf<ObsiBibleApp> { error("no app") }
 
 /** The five tabs along the bottom. */
-enum class Tab(val label: String, val icon: ImageVector) {
-    Home("Home", Icons.Outlined.Home),
-    Bible("Bible", Icons.Outlined.Book),
-    Notes("Notes", Icons.AutoMirrored.Outlined.StickyNote2),
-    Search("Search", Icons.Outlined.Search),
-    You("You", Icons.Outlined.AccountCircle),
+enum class Tab(val label: String, val icon: ImageVector, val on: ImageVector) {
+    Home("Home", Icons.Outlined.Home, Icons.Filled.Home),
+    Bible("Bible", Icons.Outlined.Book, Icons.Filled.Book),
+    Notes("Notes", Icons.AutoMirrored.Outlined.StickyNote2, Icons.AutoMirrored.Filled.StickyNote2),
+    Search("Search", Icons.Outlined.Search, Icons.Filled.Search),
+    You("You", Icons.Outlined.AccountCircle, Icons.Filled.AccountCircle),
 }
 
 /** Screens that open on top of the tabs. */
@@ -124,8 +139,23 @@ fun AppRoot(app: ObsiBibleApp) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 Column(Modifier.fillMaxSize()) {
                     Box(Modifier.weight(1f)) {
-                        AnimatedContent(targetState = stack.last(), transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "screen") { screen ->
+                        val depth = stack.size
+                        var lastDepth by remember { mutableStateOf(depth) }
+                        val forward = depth >= lastDepth
+                        SideEffect { lastDepth = depth }
+                        AnimatedContent(
+                            targetState = stack.last(),
+                            transitionSpec = {
+                                val ease = tween<IntOffset>(260, easing = FastOutSlowInEasing)
+                                val fade = tween<Float>(200)
+                                // The screen in front is solid and moves; the one behind drifts a little and dims.
+                                if (forward) ((slideInHorizontally(ease) { it / 3 } + fadeIn(tween(90))) togetherWith (slideOutHorizontally(ease) { -it / 12 } + fadeOut(tween(260, easing = LinearEasing), 0.4f))).apply { targetContentZIndex = 1f }
+                                else ((slideInHorizontally(ease) { -it / 12 } + fadeIn(tween(260), 0.4f)) togetherWith slideOutHorizontally(ease) { it / 3 }).apply { targetContentZIndex = -1f }
+                            },
+                            label = "screen",
+                        ) { screen ->
                             holder.SaveableStateProvider(screen.toString()) {
+                              Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
                                 when (screen) {
                                     Screen.Tabs -> Tabs(tab, onTab = { tab = it }, push = ::push, openRef = ::openRef)
                                     Screen.Settings -> SettingsScreen(onBack = ::pop, openSetup = { push(Screen.Setup) }, openTemplate = { push(Screen.Template(it)) })
@@ -134,6 +164,7 @@ fun AppRoot(app: ObsiBibleApp) {
                                     Screen.Setup -> SetupScreen(onDone = ::pop)
                                     is Screen.Template -> TemplateEditorScreen(screen.id, onBack = ::pop)
                                 }
+                              }
                             }
                         }
                     }
@@ -239,13 +270,18 @@ private fun UpdateBar(app: ObsiBibleApp) {
 @Composable
 private fun Tabs(tab: Tab, onTab: (Tab) -> Unit, push: (Screen) -> Unit, openRef: (Ref) -> Unit) {
     Column(Modifier.fillMaxSize()) {
+        val tabState = rememberSaveableStateHolder()
         Box(Modifier.weight(1f).fillMaxWidth()) {
-            when (tab) {
-                Tab.Home -> HomeTab(openRef = openRef, openSearch = { onTab(Tab.Search) }, openNotes = { onTab(Tab.Notes) })
-                Tab.Bible -> BibleTab(openSearch = { push(Screen.Search) }, openVersions = { push(Screen.Versions) }, onBack = { onTab(Tab.Home) })
-                Tab.Search -> SearchScreen(onOpen = openRef, onBack = null, autofocus = false)
-                Tab.You -> YouTab(openSettings = { push(Screen.Settings) }, openRef = openRef)
-                Tab.Notes -> NotesTab(openRef = openRef)
+            Crossfade(tab, animationSpec = tween(120), label = "tab") { t ->
+                tabState.SaveableStateProvider(t.name) {
+                    when (t) {
+                        Tab.Home -> HomeTab(openRef = openRef, openSearch = { onTab(Tab.Search) }, openNotes = { onTab(Tab.Notes) })
+                        Tab.Bible -> BibleTab(openSearch = { push(Screen.Search) }, openVersions = { push(Screen.Versions) }, onBack = { onTab(Tab.Home) })
+                        Tab.Search -> SearchScreen(onOpen = openRef, onBack = null, autofocus = false)
+                        Tab.You -> YouTab(openSettings = { push(Screen.Settings) }, openRef = openRef)
+                        Tab.Notes -> NotesTab(openRef = openRef)
+                    }
+                }
             }
         }
         // The keyboard covers the tabs anyway. Hiding them stops the space being counted twice.
@@ -283,6 +319,7 @@ private fun Tabs(tab: Tab, onTab: (Tab) -> Unit, push: (Screen) -> Unit, openRef
 private fun BottomTabs(tab: Tab, onTab: (Tab) -> Unit) {
     val scheme = MaterialTheme.colorScheme
     val update by LocalApp.current.updates.state.collectAsState()
+    val haptic = LocalHapticFeedback.current
     Column(Modifier.fillMaxWidth().background(scheme.background).navigationBarsPadding()) {
         HorizontalDivider(color = scheme.outlineVariant, thickness = 1.dp)
         Row(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
@@ -290,12 +327,15 @@ private fun BottomTabs(tab: Tab, onTab: (Tab) -> Unit) {
                 val on = t == tab
                 val color = if (on) scheme.onBackground else scheme.onSurfaceVariant
                 Column(
-                    Modifier.weight(1f).clickable(remember { MutableInteractionSource() }, null) { onTab(t) },
+                    Modifier.weight(1f).clickable(remember { MutableInteractionSource() }, null) {
+                        if (t != tab) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onTab(t)
+                    },
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Box {
-                        Icon(t.icon, t.label, Modifier.size(28.dp), tint = color)
+                        Icon(if (on) t.on else t.icon, t.label, Modifier.size(28.dp), tint = color)
                         // A green dot on You when an update is waiting.
                         if (t == Tab.You && update is UpdateState.Available) Box(Modifier.align(Alignment.TopEnd).size(9.dp).clip(androidx.compose.foundation.shape.CircleShape).background(Ink.dot))
                     }

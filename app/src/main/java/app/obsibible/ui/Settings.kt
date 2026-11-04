@@ -185,6 +185,7 @@ private fun PageBody(id: String, s: AppSettings, openSetup: () -> Unit, openTemp
                 }
                 Toggle("Keep going to the next chapter", s.autoContinue) { v -> set { it.copy(autoContinue = v) } }
                 Toggle("Pause while you write a note", s.pauseWhileNoting) { v -> set { it.copy(pauseWhileNoting = v) } }
+                Toggle("Microsoft voices read online Bibles", s.cloudForOnline) { v -> set { it.copy(cloudForOnline = v) } }
                 Toggle("Scroll with the audio", s.followAudio) { v -> set { it.copy(followAudio = v) } }
                 Text("Microsoft voices", style = MaterialTheme.typography.titleSmall)
                 Text(

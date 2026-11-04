@@ -23,6 +23,8 @@ data class AppSettings(
     val audioSpeed: Float = 1f,
     val autoContinue: Boolean = true,
     val pauseWhileNoting: Boolean = true,
+    /** Microsoft's voices may read online Bibles too (the words go to Microsoft). */
+    val cloudForOnline: Boolean = true,
     val followAudio: Boolean = true,
     val phoneVoice: String = "",
     // Microsoft (Azure Speech) voices, with the user's own key

@@ -90,10 +90,10 @@ class Bibles(private val context: Context) {
     fun isOnline(id: String) = id == EsvApi.ID || id.startsWith(ApiBible.PREFIX) || id.startsWith(YouVersion.PREFIX)
 
     /**
-     * A computer voice may read only Bibles on the phone. API.Bible's terms say text-to-audio of a
-     * licensed text may be a derivative work, so online Bibles use only their own recordings.
+     * The phone's own voice may read any Bible: the words stay on the phone, for personal use.
+     * Microsoft's voices send the words to Microsoft. For online Bibles that is the user's choice.
      */
-    fun allowsVoice(id: String) = !isOnline(id)
+    fun allowsCloudVoice(id: String, cloudForOnline: Boolean) = cloudForOnline || !isOnline(id)
 
     /** Which service an online Bible comes from, for the credit line. */
     fun serviceOf(id: String) = when {
