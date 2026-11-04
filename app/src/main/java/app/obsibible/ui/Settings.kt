@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
@@ -47,23 +48,43 @@ import app.obsibible.obsidian.Sender
 import app.obsibible.obsidian.VaultIndex
 
 @Composable
-fun SettingsScreen(onBack: () -> Unit) {
+fun SettingsScreen(onBack: () -> Unit, openSetup: () -> Unit = {}) {
     val app = LocalApp.current
     val s by app.settings.state.collectAsState()
     val set: ((AppSettings) -> AppSettings) -> Unit = { app.settings.update(it) }
     var voices by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
+    // Each group answers to its name and the words a person might search for.
+    fun show(vararg words: String) = SettingsSearch.matches(query, words.joinToString(" "))
     Column(Modifier.fillMaxSize()) {
         TopBack("Settings", onBack)
+        OutlinedTextField(
+            query, { query = it }, Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp),
+            placeholder = { Text("Search settings") }, singleLine = true,
+            leadingIcon = { androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Rounded.Search, null) },
+            trailingIcon = { if (query.isNotEmpty()) TextButton(onClick = { query = "" }) { Text("Clear") } },
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
+        )
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).navigationBarsPadding(),
             verticalArrangement = Arrangement.spacedBy(30.dp),
         ) {
             Spacer(Modifier.height(4.dp))
-            UpdateGroup()
+            var any = false
+            if (show("Bibles keys setup guide onboarding ESV The Message MSG API.Bible YouVersion key links versions online")) { any = true
+                Group("Bibles and keys") {
+                    Text("Add the ESV, The Message and better voices. The guide has a link for every key.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Button(onClick = openSetup) { Text("Open the setup guide") }
+                }
+            }
+            if (show("Updates version install check notifications release")) { any = true; UpdateGroup() }
+            if (show("Look appearance theme dark light black OLED colour color icon app icon")) { any = true
             Group("Look") {
                 Choices(listOf("dark" to "Dark", "oled" to "Black", "light" to "Light", "auto" to "Phone"), s.appearance) { v -> set { it.copy(appearance = v) } }
                 AppIconPicker()
             }
+            }
+            if (show("Listening audio voice speech narrator next chapter Microsoft Azure key region phone voice")) { any = true
             Group("Listening") {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -86,7 +107,9 @@ fun SettingsScreen(onBack: () -> Unit) {
                 )
                 OutlinedTextField(region, { region = it.trim().lowercase(); set { st -> st.copy(cloudRegion = region) } }, Modifier.fillMaxWidth(), label = { Text("Region, such as eastus") }, singleLine = true)
             }
-            ObsidianGroup()
+            }
+            if (show("Obsidian vault folder template note name running note clip send export tags links")) { any = true; ObsidianGroup() }
+            if (!any) Text("No setting matches \"$query\".", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
     if (voices) VoicePicker(s.bible) { voices = false }
@@ -227,5 +250,16 @@ private fun ObsidianGroup() {
             template = NoteBuilder.DEFAULT_TEMPLATE
             app.settings.update { it.copy(clipTemplate = "") }
         }) { Text("Reset template") }
+    }
+}
+
+/** Settings search: every word typed must start a word in the group's text, or appear inside it. */
+object SettingsSearch {
+    fun matches(query: String, text: String): Boolean {
+        val q = query.trim().lowercase()
+        if (q.isEmpty()) return true
+        val hay = text.lowercase()
+        val words = hay.split(Regex("[^a-z0-9.]+"))
+        return q.split(Regex("\\s+")).all { w -> hay.contains(w) || words.any { it.startsWith(w) } }
     }
 }

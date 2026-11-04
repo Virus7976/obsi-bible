@@ -88,6 +88,7 @@ sealed interface Screen {
     data object Settings : Screen
     data object Search : Screen
     data object Versions : Screen
+    data object Setup : Screen
 }
 
 @Composable
@@ -112,6 +113,8 @@ fun AppRoot(app: ObsiBibleApp) {
             val linked by app.openRef.collectAsState()
             LaunchedEffect(linked) { linked?.let { Ref.fromKey(it) }?.let { openRef(it); app.openRef.value = null } }
 
+            // The setup guide opens by itself once, on the first start.
+            LaunchedEffect(Unit) { if (!app.settings.value.onboarded) push(Screen.Setup) }
             AskForNotifications(app)
             UpdatePrompt(app, openSettings = { push(Screen.Settings) })
 
@@ -122,9 +125,10 @@ fun AppRoot(app: ObsiBibleApp) {
                             holder.SaveableStateProvider(screen.toString()) {
                                 when (screen) {
                                     Screen.Tabs -> Tabs(tab, onTab = { tab = it }, push = ::push, openRef = ::openRef)
-                                    Screen.Settings -> SettingsScreen(onBack = ::pop)
+                                    Screen.Settings -> SettingsScreen(onBack = ::pop, openSetup = { push(Screen.Setup) })
                                     Screen.Search -> SearchScreen(onOpen = ::openRef, onBack = ::pop, autofocus = true)
-                                    Screen.Versions -> VersionsScreen(onBack = ::pop)
+                                    Screen.Versions -> VersionsScreen(onBack = ::pop, openSetup = { push(Screen.Setup) })
+                                    Screen.Setup -> SetupScreen(onDone = ::pop)
                                 }
                             }
                         }

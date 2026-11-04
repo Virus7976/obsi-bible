@@ -175,6 +175,7 @@ fun VoicePicker(bible: String, onDone: () -> Unit) {
     }
     val choices = buildList {
         Narrators.forBible(bible).forEach { add(Choice("narrator:${it.id}", it.name, if (it.streamOnly) "Streams with your ESV key" else "Recorded · needs internet the first time", "Recorded")) }
+        if (!app.bibles.allowsVoice(bible)) return@buildList
         add(Choice("phone:", "Phone default", "Works offline", "Phone voice"))
         phone.orEmpty().forEach { add(Choice("phone:${it.id}", it.name, it.detail, "Phone voice")) }
         cloud.forEach { add(Choice("cloud:${it.id}", it.name, it.detail, "Microsoft voices")) }

@@ -25,7 +25,7 @@ data class Hit(val ref: Ref, val text: String)
 data class Found(val total: Int, val hits: List<Hit>, val fixed: String? = null, val partial: Boolean = false)
 
 /** The most verses of one online Bible kept on the phone. */
-object OnlineCap { const val VERSES = 500 }
+object OnlineCap { const val VERSES = 500; const val REFRESH_MS = 30L * 24 * 3600 * 1000 }
 
 /** Where a search looks. */
 enum class Scope(val label: String) { All("All"), Old("Old Testament"), New("New Testament"), Book("This book") }
@@ -79,22 +79,40 @@ class Bibles(private val context: Context) {
 
     // ---------- online Bibles (the user's own keys) ----------
 
-    /** The keys: ESV key, API.Bible key, and the API.Bible Bibles the user added ("id|abbr|name|copyright"). */
-    var keys: () -> Triple<String, String, List<String>> = { Triple("", "", emptyList()) }
+    /** The user's keys, and the Bibles they added ("id|abbr|name|copyright"; a YouVersion id starts with YV:). */
+    data class Keys(val esv: String = "", val apiBible: String = "", val youVersion: String = "", val added: List<String> = emptyList())
+    var keys: () -> Keys = { Keys() }
 
     private val _onlineError = MutableStateFlow<String?>(null)
     /** Why the last online chapter could not load, or null. */
     val onlineError: StateFlow<String?> = _onlineError.asStateFlow()
 
-    fun isOnline(id: String) = id == EsvApi.ID || id.startsWith(ApiBible.PREFIX)
+    fun isOnline(id: String) = id == EsvApi.ID || id.startsWith(ApiBible.PREFIX) || id.startsWith(YouVersion.PREFIX)
+
+    /**
+     * A computer voice may read only Bibles on the phone. API.Bible's terms say text-to-audio of a
+     * licensed text may be a derivative work, so online Bibles use only their own recordings.
+     */
+    fun allowsVoice(id: String) = !isOnline(id)
+
+    /** Which service an online Bible comes from, for the credit line. */
+    fun serviceOf(id: String) = when {
+        id == EsvApi.ID -> "Crossway"
+        id.startsWith(ApiBible.PREFIX) -> "API.Bible"
+        id.startsWith(YouVersion.PREFIX) -> "YouVersion"
+        else -> ""
+    }
 
     private fun online(): List<BibleInfo> {
-        val (esv, ab, list) = keys()
+        val k = keys()
         val out = ArrayList<BibleInfo>()
-        if (esv.isNotBlank()) out += EsvApi.info
-        if (ab.isNotBlank()) list.forEach { e ->
+        if (k.esv.isNotBlank()) out += EsvApi.info
+        k.added.forEach { e ->
             val p = e.split('|')
-            if (p.size >= 3) out += BibleInfo(ApiBible.PREFIX + p[0], p[1], p[2], p.getOrElse(3) { "" })
+            if (p.size < 3) return@forEach
+            val yv = p[0].startsWith(YouVersion.PREFIX)
+            if (yv && k.youVersion.isBlank() || !yv && k.apiBible.isBlank()) return@forEach
+            out += BibleInfo(if (yv) p[0] else ApiBible.PREFIX + p[0], p[1], p[2], p.getOrElse(3) { "" })
         }
         return out
     }
@@ -104,23 +122,40 @@ class Bibles(private val context: Context) {
 
     private fun onlineDir(id: String) = File(context.filesDir, "online/" + id.replace(Regex("[^A-Za-z0-9_-]"), "_")).apply { mkdirs() }
 
+    /** Saved text is read again after 30 days, as API.Bible asks. File name: BOOK.CH.VERSES.SAVEDMILLIS.json */
+    private fun fresh(f: File): Boolean {
+        val saved = f.name.split('.').getOrNull(3)?.toLongOrNull() ?: return false
+        return System.currentTimeMillis() - saved < OnlineCap.REFRESH_MS
+    }
+
     private fun onlineChapter(id: String, ref: Ref): Chapter? {
         val d = onlineDir(id)
-        d.listFiles { f -> f.name.startsWith("${ref.book}.${ref.chapter}.") }?.firstOrNull()?.let { f ->
-            runCatching { json.decodeFromString(Chapter.serializer(), f.readText()) }.getOrNull()?.let { f.setLastModified(System.currentTimeMillis()); return it }
+        val old = d.listFiles { f -> f.name.startsWith("${ref.book}.${ref.chapter}.") }?.firstOrNull()
+        if (old != null && fresh(old)) {
+            runCatching { json.decodeFromString(Chapter.serializer(), old.readText()) }.getOrNull()?.let { old.setLastModified(System.currentTimeMillis()); return it }
         }
         // Never reach the network from the main thread; screens load chapters in the background.
         if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) return null
-        val (esv, ab, _) = keys()
+        val k = keys()
         return try {
-            val ch = if (id == EsvApi.ID) EsvApi.chapter(esv, ref) else ApiBible.chapter(ab, id.removePrefix(ApiBible.PREFIX), ref)
+            val ch = when {
+                id == EsvApi.ID -> EsvApi.chapter(k.esv, ref)
+                id.startsWith(YouVersion.PREFIX) -> YouVersion.chapter(k.youVersion, id.removePrefix(YouVersion.PREFIX), ref)
+                else -> ApiBible.chapter(k.apiBible, id.removePrefix(ApiBible.PREFIX), ref)
+            }
             _onlineError.value = null
+            old?.delete()
             val count = ch.verses().size
-            File(d, "${ref.book}.${ref.chapter}.$count.json").writeText(json.encodeToString(Chapter.serializer(), ch))
+            File(d, "${ref.book}.${ref.chapter}.$count.${System.currentTimeMillis()}.json").writeText(json.encodeToString(Chapter.serializer(), ch))
             trimCache(d)
             ch
         } catch (e: Exception) {
-            _onlineError.value = (e.message ?: "Could not reach the Bible service.").let { if (e is java.net.UnknownHostException) "No internet. This chapter is not on the phone yet." else it }
+            old?.delete() // too old to keep
+            _onlineError.value = when (e) {
+                is java.net.UnknownHostException -> "No internet. This chapter is not on the phone yet."
+                is YouVersion.NotFound -> "${ref.chapterRef.label} is not in this Bible."
+                else -> e.message ?: "Could not reach the Bible service."
+            }
             null
         }
     }
@@ -195,9 +230,14 @@ class Bibles(private val context: Context) {
      */
     fun search(id: String, query: String, where: Scope, book: String?, limit: Int = 300): Found {
         if (isOnline(id)) {
-            val (esv, ab, _) = keys()
-            return runCatching { if (id == EsvApi.ID) EsvApi.search(esv, query) else ApiBible.search(ab, id.removePrefix(ApiBible.PREFIX), query) }
-                .getOrElse { Found(0, emptyList()) }
+            val k = keys()
+            return runCatching {
+                when {
+                    id == EsvApi.ID -> EsvApi.search(k.esv, query)
+                    id.startsWith(ApiBible.PREFIX) -> ApiBible.search(k.apiBible, id.removePrefix(ApiBible.PREFIX), query)
+                    else -> Found(0, emptyList()) // YouVersion has no word search
+                }
+            }.getOrElse { Found(0, emptyList()) }
         }
         val db = db(id) ?: return Found(0, emptyList())
         val (lo, hi) = range(where, book)

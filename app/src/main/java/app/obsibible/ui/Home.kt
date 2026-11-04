@@ -103,7 +103,7 @@ fun HomeTab(openRef: (Ref) -> Unit, openSearch: () -> Unit) {
 
 /** The Bibles on the phone, laid out like the reference: abbreviation, audio count, full name. */
 @Composable
-fun VersionsScreen(onBack: () -> Unit) {
+fun VersionsScreen(onBack: () -> Unit, openSetup: () -> Unit = {}) {
     val app = LocalApp.current
     val s by app.settings.state.collectAsState()
     val installed by app.bibles.installed.collectAsState()
@@ -165,7 +165,7 @@ fun VersionsScreen(onBack: () -> Unit) {
                 }
             }
             Spacer(Modifier.height(28.dp))
-            OnlineBibles()
+            OnlineBibles(openSetup)
             Spacer(Modifier.height(28.dp))
             Text("Add a Bible", style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(8.dp))

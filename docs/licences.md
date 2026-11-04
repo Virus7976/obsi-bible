@@ -21,3 +21,6 @@ Rows are added as each source ships.
 - The Message (MSG): no public API and no free licence. It shows only if the user's own YouVersion or API.Bible key is licensed for it.
 - eBible.org: each translation's licence comes from its catalogue. The installer only installs texts that allow it.
 - Microsoft Edge "Read Aloud" voices (the ones Readest uses) work by pretending to be the Edge browser. The app does not do that. It uses Microsoft's official Azure Speech service with the user's own key instead.
+- API.Bible (rest.api.bible): free Starter plan, non-commercial, up to 3 licensed Bibles. Must show a visible link to https://api.bible. Cached text must be refreshed at least every 30 days. Text-to-audio of a licensed text may be a derivative work, so the app never reads these Bibles with a computer voice.
+- YouVersion Platform (api.youversion.com): user's own app key, header X-YVP-App-Key. Non-commercial. The app shows each Bible's copyright and names YouVersion. Same 500-verse cache cap and no computer voice, to stay safe.
+

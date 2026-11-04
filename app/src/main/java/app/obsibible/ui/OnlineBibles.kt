@@ -11,9 +11,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -35,17 +37,17 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import app.obsibible.bible.ApiBible
 import app.obsibible.bible.RemoteBible
+import app.obsibible.bible.YouVersion
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
  * Bibles read over the internet with the user's own free keys. Keys stay on this phone.
- * The ESV comes from Crossway. API.Bible carries many Bibles; The Message shows there only
- * when the key is licensed for it.
+ * The setup guide explains each key step by step; this is the short form.
  */
 @Composable
-fun OnlineBibles() {
+fun OnlineBibles(openSetup: () -> Unit) {
     val app = LocalApp.current
     val s by app.settings.state.collectAsState()
     val scheme = MaterialTheme.colorScheme
@@ -53,70 +55,82 @@ fun OnlineBibles() {
     val scope = rememberCoroutineScope()
     var esv by remember { mutableStateOf(s.esvKey) }
     var ab by remember { mutableStateOf(s.apiBibleKey) }
-    var finding by remember { mutableStateOf(false) }
-    var found by remember { mutableStateOf<List<RemoteBible>?>(null) }
+    var yv by remember { mutableStateOf(s.youVersionKey) }
+    var finding by remember { mutableStateOf<String?>(null) }
+    var found by remember { mutableStateOf<Pair<String, List<RemoteBible>>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
 
     Text("Online", style = MaterialTheme.typography.headlineSmall)
     Spacer(Modifier.height(8.dp))
-    Text("Read the ESV, The Message and more with your own free key. Keys stay on this phone.", color = scheme.onSurfaceVariant)
+    Text("Read the ESV, The Message and more with your own free keys. Keys stay on this phone.", color = scheme.onSurfaceVariant)
+    Spacer(Modifier.height(14.dp))
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(scheme.surfaceContainer).clickable(onClick = openSetup).padding(18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(24.dp))
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text("Setup guide", style = MaterialTheme.typography.titleMedium)
+            Text("Step by step, with a link for every key.", color = scheme.onSurfaceVariant)
+        }
+    }
 
     Spacer(Modifier.height(18.dp))
     Text("ESV", style = MaterialTheme.typography.titleLarge)
     Text("Text and Crossway's audio. Up to 500 verses stay on the phone for offline use.", color = scheme.onSurfaceVariant)
     Spacer(Modifier.height(8.dp))
-    OutlinedTextField(
-        esv, { esv = it.trim(); app.settings.update { st -> st.copy(esvKey = esv) } }, Modifier.fillMaxWidth(),
-        label = { Text("ESV key") }, singleLine = true, visualTransformation = PasswordVisualTransformation(),
-    )
-    LinkRow("Get a free key at api.esv.org") { uri.openUri("https://api.esv.org/account/create-application/") }
+    KeyField("ESV key", esv) { esv = it; app.settings.update { st -> st.copy(esvKey = it) } }
+    LinkRow("Get a free key at api.esv.org") { uri.openUri(SetupLinks.ESV_SIGNUP) }
+
+    fun find(source: String, load: () -> List<RemoteBible>) {
+        error = null
+        finding = source
+        scope.launch {
+            runCatching { withContext(Dispatchers.IO) { load() } }
+                .onSuccess { found = source to it }.onFailure { error = it.message ?: "Could not reach $source." }
+            finding = null
+        }
+    }
 
     Spacer(Modifier.height(18.dp))
     Text("API.Bible", style = MaterialTheme.typography.titleLarge)
-    Text("Many Bibles. The Message shows only if your key is allowed to use it.", color = scheme.onSurfaceVariant)
+    Text("Many Bibles. The Message shows if your key is allowed to use it.", color = scheme.onSurfaceVariant)
     Spacer(Modifier.height(8.dp))
-    OutlinedTextField(
-        ab, { ab = it.trim(); app.settings.update { st -> st.copy(apiBibleKey = ab) } }, Modifier.fillMaxWidth(),
-        label = { Text("API.Bible key") }, singleLine = true, visualTransformation = PasswordVisualTransformation(),
-    )
-    LinkRow("Get a free key at scripture.api.bible") { uri.openUri("https://scripture.api.bible/signup") }
+    KeyField("API.Bible key", ab) { ab = it; app.settings.update { st -> st.copy(apiBibleKey = it) } }
+    LinkRow("Get a free key at api.bible") { uri.openUri(SetupLinks.API_BIBLE_SIGNUP) }
+    if (ab.isNotBlank()) AddRow(if (finding == "API.Bible") "Looking…" else "Add a Bible from API.Bible") { find("API.Bible") { ApiBible.bibles(ab) } }
 
+    Spacer(Modifier.height(18.dp))
+    Text("YouVersion", style = MaterialTheme.typography.titleLarge)
+    Text("The YouVersion Platform. Which Bibles you get depends on your key.", color = scheme.onSurfaceVariant)
+    Spacer(Modifier.height(8.dp))
+    KeyField("YouVersion app key", yv) { yv = it; app.settings.update { st -> st.copy(youVersionKey = it) } }
+    LinkRow("Get a free key at platform.youversion.com") { uri.openUri(SetupLinks.YV_START) }
+    if (yv.isNotBlank()) AddRow(if (finding == "YouVersion") "Looking…" else "Add a Bible from YouVersion") { find("YouVersion") { YouVersion.bibles(yv) } }
+
+    if (s.onlineBibles.isNotEmpty()) {
+        Spacer(Modifier.height(14.dp))
+        Text("Added", style = MaterialTheme.typography.titleSmall, color = scheme.onSurfaceVariant)
+    }
     s.onlineBibles.forEach { e ->
         val p = e.split('|')
         Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(p.getOrElse(1) { "" }, style = MaterialTheme.typography.titleMedium)
-                Text(p.getOrElse(2) { "" }, color = scheme.onSurfaceVariant)
+                Text(p.getOrElse(2) { "" } + if (p[0].startsWith(YouVersion.PREFIX)) " · YouVersion" else " · API.Bible", color = scheme.onSurfaceVariant)
             }
             IconButton(onClick = { app.settings.update { st -> st.copy(onlineBibles = st.onlineBibles - e) } }) { Icon(Icons.Rounded.Close, "Remove") }
         }
     }
-    if (ab.isNotBlank()) {
-        Spacer(Modifier.height(8.dp))
-        Row(
-            Modifier.clip(CircleShape).background(scheme.surfaceContainer).clickable {
-                error = null
-                finding = true
-                scope.launch {
-                    runCatching { withContext(Dispatchers.IO) { ApiBible.bibles(ab) } }
-                        .onSuccess { found = it }.onFailure { error = it.message ?: "Could not reach API.Bible." }
-                    finding = false
-                }
-            }.padding(horizontal = 20.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(Icons.Rounded.Add, null, Modifier.size(22.dp))
-            Spacer(Modifier.width(10.dp))
-            Text(if (finding) "Looking…" else "Add a Bible from API.Bible", style = MaterialTheme.typography.titleMedium)
-        }
-    }
     error?.let { Spacer(Modifier.height(10.dp)); Text(it, color = scheme.error) }
 
-    found?.let { list ->
+    found?.let { (source, list) ->
+        val yvSource = source == "YouVersion"
         val have = s.onlineBibles.map { it.substringBefore('|') }.toSet()
         QuickSwitcher(
             "Add a Bible",
-            list.filter { it.id !in have }.map {
+            list.filter { (if (yvSource) YouVersion.PREFIX + it.id else it.id) !in have }.map {
                 Choice(it.id, "${it.abbreviation} · ${it.name}", it.language, if (it.name.contains("Message", true)) "The Message" else it.language)
             },
             null,
@@ -124,9 +138,8 @@ fun OnlineBibles() {
                 val b = list.first { it.id == c.id }
                 found = null
                 scope.launch {
-                    val cr = withContext(Dispatchers.IO) { ApiBible.copyright(ab, b.id) }
-                    val entry = listOf(b.id, b.abbreviation, b.name, cr).joinToString("|") { it.replace('|', '/') }
-                    app.settings.update { st -> st.copy(onlineBibles = st.onlineBibles + entry, bible = ApiBible.PREFIX + b.id) }
+                    if (yvSource) addOnlineBible(app, YouVersion.PREFIX + b.id, b.abbreviation, b.name, b.copyright)
+                    else addOnlineBible(app, b.id, b.abbreviation, b.name, withContext(Dispatchers.IO) { ApiBible.copyright(ab, b.id) })
                 }
             },
             onDismiss = { found = null },
@@ -136,10 +149,32 @@ fun OnlineBibles() {
 }
 
 @Composable
+private fun KeyField(label: String, value: String, onChange: (String) -> Unit) {
+    OutlinedTextField(
+        value, { onChange(it.trim()) }, Modifier.fillMaxWidth(),
+        label = { Text(label) }, singleLine = true, visualTransformation = PasswordVisualTransformation(),
+    )
+}
+
+@Composable
+private fun AddRow(text: String, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Spacer(Modifier.height(6.dp))
+    Row(
+        Modifier.clip(CircleShape).background(scheme.surfaceContainer).clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Rounded.Add, null, Modifier.size(22.dp))
+        Spacer(Modifier.width(10.dp))
+        Text(text, style = MaterialTheme.typography.titleMedium)
+    }
+}
+
+@Composable
 private fun LinkRow(text: String, onClick: () -> Unit) {
     Row(Modifier.clip(MaterialTheme.shapes.small).clickable(onClick = onClick).padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(text, color = MaterialTheme.colorScheme.primary)
+        Text(text, color = LinkColor)
         Spacer(Modifier.width(6.dp))
-        Icon(Icons.AutoMirrored.Rounded.OpenInNew, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+        Icon(Icons.AutoMirrored.Rounded.OpenInNew, null, Modifier.size(16.dp), tint = LinkColor)
     }
 }

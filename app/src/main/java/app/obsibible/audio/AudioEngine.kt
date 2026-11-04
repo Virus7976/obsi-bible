@@ -155,6 +155,10 @@ class AudioEngine(private val app: ObsiBibleApp) {
     /** Plays [ref]'s chapter in [bible], from [fromVerse] (0 = the start). */
     fun play(bible: String, ref: Ref, fromVerse: Int = 0) {
         val src = pickSource(bible)
+        if (src !is Source.Recorded && !app.bibles.allowsVoice(bible)) {
+            _ui.update { it.copy(error = "This Bible has no recording, and its licence does not allow a computer voice.", loading = false) }
+            return
+        }
         if (!app.bibles.isOnline(bible)) return start(bible, ref, fromVerse, src)
         _ui.update { it.copy(loading = true, error = null) }
         main.launch {

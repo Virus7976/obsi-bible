@@ -206,10 +206,18 @@ fun BibleTab(openSearch: () -> Unit, openVersions: () -> Unit) {
         if (chapter != null && app.bibles.isOnline(s.bible)) {
             val info = app.bibles.installed.value.firstOrNull { it.id == s.bible }
             val uri = androidx.compose.ui.platform.LocalUriHandler.current
-            val line = if (s.bible == "ESV") "ESV® Bible · © 2001 Crossway · esv.org" else info?.copyright.orEmpty().lineSequence().firstOrNull().orEmpty().take(90)
-            if (line.isNotBlank()) Text(
-                line, color = scheme.onSurfaceVariant, fontSize = 12.sp, maxLines = 1,
-                modifier = Modifier.fillMaxWidth().clickable { if (s.bible == "ESV") uri.openUri("https://www.esv.org") }.padding(horizontal = 20.dp, vertical = 6.dp),
+            // API.Bible's free plan asks for a visible link to api.bible. YouVersion is named too.
+            val service = app.bibles.serviceOf(s.bible)
+            val cr = info?.copyright.orEmpty().lineSequence().firstOrNull().orEmpty().take(70)
+            val line = when (service) {
+                "Crossway" -> "ESV® Bible · © 2001 Crossway · esv.org"
+                "API.Bible" -> listOf(cr, "via api.bible").filter { it.isNotBlank() }.joinToString(" · ")
+                else -> listOf(cr, "via YouVersion").filter { it.isNotBlank() }.joinToString(" · ")
+            }
+            val link = when (service) { "Crossway" -> "https://www.esv.org"; "API.Bible" -> "https://api.bible"; else -> "https://www.bible.com" }
+            Text(
+                line, color = scheme.onSurfaceVariant, fontSize = 12.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth().clickable { uri.openUri(link) }.padding(horizontal = 20.dp, vertical = 6.dp),
             )
         }
 

@@ -31,6 +31,8 @@ data class AppSettings(
     val apiBibleKey: String = "",
     // API.Bible Bibles the user added: "id|abbreviation|name|copyright"
     val onlineBibles: List<String> = emptyList(),
+    // false until the setup guide was finished or skipped once
+    val onboarded: Boolean = false,
     // updates
     val autoCheckUpdates: Boolean = true,
     val updateRepo: String = "Virus7976/obsi-bible",

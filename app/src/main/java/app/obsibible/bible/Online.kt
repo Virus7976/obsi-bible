@@ -23,7 +23,7 @@ private fun JsonObject.str(k: String) = (this[k] as? JsonPrimitive)?.contentOrNu
 private fun get(url: String, header: Pair<String, String>): JsonObject {
     val req = Request.Builder().url(url).header(header.first, header.second).header("User-Agent", "ObsiBible").build()
     http.newCall(req).execute().use { r ->
-        if (r.code == 401 || r.code == 403) throw IOException("The key was not accepted. Check it in Versions.")
+        if (r.code == 401 || r.code == 403) throw IOException("The key was not accepted. Copy it again and paste it.")
         if (r.code == 429) throw IOException("Too many requests today. Try again later.")
         if (!r.isSuccessful) throw IOException("The Bible service answered ${r.code}.")
         return json.parseToJsonElement(r.body!!.string()) as JsonObject
@@ -119,7 +119,7 @@ object EsvApi {
         val client = http.newBuilder().followRedirects(false).build()
         val req = Request.Builder().url(url).header("Authorization", "Token ${key.trim()}").header("User-Agent", "ObsiBible").build()
         client.newCall(req).execute().use { r ->
-            if (r.code == 401 || r.code == 403) throw IOException("The ESV key was not accepted.")
+            if (r.code == 401 || r.code == 403) throw IOException("The ESV key was not accepted. Copy it again and paste it.")
             return r.header("Location") ?: if (r.isSuccessful) url.toString() else throw IOException("ESV audio answered ${r.code}.")
         }
     }
@@ -131,7 +131,7 @@ object EsvApi {
  */
 object ApiBible {
     const val PREFIX = "AB:"
-    private const val BASE = "https://api.scripture.api.bible/v1"
+    private const val BASE = "https://rest.api.bible/v1"
 
     private fun auth(key: String) = "api-key" to key.trim()
 

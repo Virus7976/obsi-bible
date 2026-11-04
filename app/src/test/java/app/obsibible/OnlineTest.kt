@@ -81,6 +81,39 @@ class OnlineTest {
         assertFalse(own.contains("[!bible]"))
     }
 
+    @Test fun youVersionHtmlWithDataUsfm() {
+        val html = "<div class=\"s1\"><span class=\"heading\">The Word Became Flesh</span></div>" +
+            "<div class=\"p\"><span class=\"verse v1\" data-usfm=\"JHN.1.1\"><span class=\"label\">1</span><span class=\"content\">In the beginning was the Word,</span></span>" +
+            "<span class=\"verse v1\" data-usfm=\"JHN.1.1\"><span class=\"content\"> and the Word was God.</span></span>" +
+            "<span class=\"verse v2\" data-usfm=\"JHN.1.2\"><span class=\"label\">2</span><span class=\"content\">He was with God</span>" +
+            "<span class=\"note f\"><span class=\"label\">#</span><span class=\"body\">Or a footnote</span></span><span class=\"content\">&nbsp;in the beginning.</span></span></div>" +
+            "<div class=\"q1\"><span class=\"verse v3\" data-usfm=\"JHN.1.3\"><span class=\"label\">3</span><span class=\"content\">All things were made</span></span></div>"
+        val ch = app.obsibible.bible.YouVersion.parseHtml(Ref("JHN", 1), html)
+        assertEquals("s1", ch.blocks[0].kind)
+        assertEquals("The Word Became Flesh", ch.blocks[0].segs[0].s)
+        val v = ch.verses().toMap()
+        assertEquals(listOf(1, 2, 3), v.keys.toList())
+        assertEquals("In the beginning was the Word, and the Word was God.", v[1]!!.trim())
+        assertEquals("He was with God in the beginning.", v[2]!!.trim())
+        assertEquals("q1", ch.blocks.last().kind)
+    }
+
+    @Test fun youVersionHtmlWithOnlyLabels() {
+        val html = "<p><sup>16</sup>For God so loved the world, <sup>17</sup>For God did not send</p>"
+        val v = app.obsibible.bible.YouVersion.parseHtml(Ref("JHN", 3), html).verses().toMap()
+        assertEquals(listOf(16, 17), v.keys.toList())
+        assertEquals("For God so loved the world,", v[16]!!.trim())
+    }
+
+    @Test fun settingsSearchFindsByWords() {
+        val m = app.obsibible.ui.SettingsSearch::matches
+        assertTrue(m("", "anything"))
+        assertTrue(m("msg", "ESV The Message MSG key"))
+        assertTrue(m("dark the", "Look appearance theme dark"))
+        assertTrue(m("youv", "API.Bible YouVersion key"))
+        assertFalse(m("vault", "Look appearance theme dark"))
+    }
+
     @Test fun linksAndTagsReachTheNote() {
         val clip = Clip(Ref("JHN", 3, 16), "BSB", "Berean Standard Bible", "For God so loved the world", tags = listOf("love"), links = listOf("[[Grace]]"))
         val t = VaultTemplates.prepare("---\ntags: [study]\n---\n# {{title}}\n")

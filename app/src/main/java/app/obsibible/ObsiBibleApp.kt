@@ -46,10 +46,10 @@ class ObsiBibleApp : Application() {
         settings = SettingsStore(this)
         updates = SelfUpdate(this, settings)
         bibles = Bibles(this)
-        bibles.keys = { settings.value.let { Triple(it.esvKey, it.apiBibleKey, it.onlineBibles) } }
+        bibles.keys = { settings.value.let { app.obsibible.bible.Bibles.Keys(it.esvKey, it.apiBibleKey, it.youVersionKey, it.onlineBibles) } }
         // New or changed keys show their Bibles at once.
         appScope.launch {
-            settings.state.map { Triple(it.esvKey, it.apiBibleKey, it.onlineBibles) }.distinctUntilChanged().collect { bibles.refreshOnline() }
+            settings.state.map { app.obsibible.bible.Bibles.Keys(it.esvKey, it.apiBibleKey, it.youVersionKey, it.onlineBibles) }.distinctUntilChanged().collect { bibles.refreshOnline() }
         }
         audio = AudioEngine(this)
         marks = app.obsibible.data.MarksStore(this)
