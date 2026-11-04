@@ -15,6 +15,16 @@ data class AppSettings(
     // reading
     val bible: String = "BSB",
     val lastRef: String = "JHN.1",
+    val recentSearches: List<String> = emptyList(),
+    // audio: narrator:<id> | phone:<voice name> | cloud:<voice short name>
+    val audioSource: String = "narrator:souer",
+    val audioSpeed: Float = 1f,
+    val autoContinue: Boolean = true,
+    val phoneVoice: String = "",
+    // Microsoft (Azure Speech) voices, with the user's own key
+    val cloudKey: String = "",
+    val cloudRegion: String = "",
+    val cloudVoice: String = "en-US-AndrewNeural",
     // online Bibles: one key per source, typed in by the user
     val esvKey: String = "",
     val youVersionKey: String = "",
@@ -27,6 +37,8 @@ data class AppSettings(
     val ignoredVersion: String = "",
     val installMethod: String = "system", // system | shizuku | adb
     val lastUpdateCheck: Long = 0L,
+    val notifiedVersion: String = "",
+    val askedNotifications: Boolean = false,
 )
 
 /**

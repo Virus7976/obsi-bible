@@ -1,7 +1,12 @@
 package app.obsibible.ui
 
+import android.Manifest
+import android.os.Build
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
@@ -20,10 +25,10 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.Book
 import androidx.compose.material.icons.outlined.Home
@@ -35,12 +40,14 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -57,7 +64,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.obsibible.ObsiBibleApp
+import app.obsibible.bible.Ref
+import app.obsibible.update.UpdateNotice
 import app.obsibible.update.UpdateState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 val LocalApp = staticCompositionLocalOf<ObsiBibleApp> { error("no app") }
 
@@ -74,6 +85,8 @@ enum class Tab(val label: String, val icon: ImageVector) {
 sealed interface Screen {
     data object Tabs : Screen
     data object Settings : Screen
+    data object Search : Screen
+    data object Versions : Screen
 }
 
 @Composable
@@ -84,55 +97,139 @@ fun AppRoot(app: ObsiBibleApp) {
             val stack = remember { mutableStateListOf<Screen>(Screen.Tabs) }
             var tab by remember { mutableStateOf(Tab.Bible) }
             val holder = rememberSaveableStateHolder()
-            BackHandler(enabled = stack.size > 1) { stack.removeAt(stack.lastIndex) }
+            fun push(s: Screen) { if (stack.last() != s) stack.add(s) }
+            fun pop() { if (stack.size > 1) stack.removeAt(stack.lastIndex) }
+            fun openRef(r: Ref) {
+                app.settings.update { it.copy(lastRef = r.key) }
+                while (stack.size > 1) stack.removeAt(stack.lastIndex)
+                tab = Tab.Bible
+            }
+            BackHandler(enabled = stack.size > 1) { pop() }
             BackHandler(enabled = stack.size == 1 && tab != Tab.Bible) { tab = Tab.Bible }
 
-            UpdatePrompt(app)
+            // A verse link from Obsidian opens in the reader.
+            val linked by app.openRef.collectAsState()
+            LaunchedEffect(linked) { linked?.let { Ref.fromKey(it) }?.let { openRef(it); app.openRef.value = null } }
+
+            AskForNotifications(app)
+            UpdatePrompt(app, openSettings = { push(Screen.Settings) })
 
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                AnimatedContent(
-                    targetState = stack.last(),
-                    transitionSpec = { fadeIn() togetherWith fadeOut() },
-                    label = "screen",
-                ) { screen ->
-                    holder.SaveableStateProvider(screen.toString()) {
-                        when (screen) {
-                            Screen.Tabs -> Tabs(tab, onTab = { tab = it }, openSettings = { stack.add(Screen.Settings) })
-                            Screen.Settings -> SettingsScreen(onBack = { stack.removeAt(stack.lastIndex) })
+                Column(Modifier.fillMaxSize()) {
+                    Box(Modifier.weight(1f)) {
+                        AnimatedContent(targetState = stack.last(), transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "screen") { screen ->
+                            holder.SaveableStateProvider(screen.toString()) {
+                                when (screen) {
+                                    Screen.Tabs -> Tabs(tab, onTab = { tab = it }, push = ::push, openRef = ::openRef)
+                                    Screen.Settings -> SettingsScreen(onBack = ::pop)
+                                    Screen.Search -> SearchScreen(onOpen = ::openRef, onBack = ::pop, autofocus = true)
+                                    Screen.Versions -> VersionsScreen(onBack = ::pop)
+                                }
+                            }
                         }
                     }
+                    UpdateBar(app)
                 }
             }
         }
     }
 }
 
+/** Asks once for permission to show notifications, so update notices can reach the user. */
 @Composable
-private fun UpdatePrompt(app: ObsiBibleApp) {
+private fun AskForNotifications(app: ObsiBibleApp) {
+    if (Build.VERSION.SDK_INT < 33) return
+    val s by app.settings.state.collectAsState()
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    LaunchedEffect(Unit) {
+        if (!s.askedNotifications && !UpdateNotice.canNotify(app)) {
+            app.settings.update { it.copy(askedNotifications = true) }
+            launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+}
+
+@Composable
+private fun UpdatePrompt(app: ObsiBibleApp, openSettings: () -> Unit) {
     val update by app.updates.state.collectAsState()
+    val tapped by app.updateTapped.collectAsState()
     var later by remember { mutableStateOf<String?>(null) }
+
+    // The update notification was tapped: show the update, or start it straight away.
+    LaunchedEffect(tapped) {
+        val install = tapped ?: return@LaunchedEffect
+        app.updateTapped.value = null
+        var info = (app.updates.state.value as? UpdateState.Available)?.info
+        if (info == null) info = runCatching { withContext(Dispatchers.IO) { app.updates.checkNow() } }.getOrNull()
+        if (info == null) { openSettings(); return@LaunchedEffect }
+        if (install) app.updates.installFlow(info) else later = null
+    }
+
     val info = (update as? UpdateState.Available)?.info ?: return
     if (later == info.version) return
     AlertDialog(
         onDismissRequest = { later = info.version },
-        title = { Text("Update ready: ${info.version}") },
-        text = { Text(info.notes.trim().ifBlank { "A new version is ready." }.take(500)) },
+        title = { Text("Version ${info.version} is ready") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text("You have ${app.updates.currentVersion}.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val notes = cleanNotes(info.notes)
+                if (notes.isNotBlank()) { Spacer(Modifier.height(12.dp)); Text(notes) }
+            }
+        },
         confirmButton = { TextButton(onClick = { later = info.version; app.updates.installFlow(info) }) { Text("Install") } },
         dismissButton = { TextButton(onClick = { later = info.version }) { Text("Later") } },
     )
 }
 
+/** Release notes without the markdown heading, with plain bullets. */
+fun cleanNotes(notes: String): String = notes.lines()
+    .filter { !it.trim().startsWith("#") }
+    .joinToString("\n") { it.trim().replace(Regex("^[-*]\\s+"), "• ") }
+    .trim().take(800)
+
+/** A slim bar at the bottom while an update downloads and installs. */
 @Composable
-private fun Tabs(tab: Tab, onTab: (Tab) -> Unit, openSettings: () -> Unit) {
+private fun UpdateBar(app: ObsiBibleApp) {
+    val st by app.updates.state.collectAsState()
+    val show = st is UpdateState.Downloading || st is UpdateState.Installing || st is UpdateState.Ready
+    AnimatedVisibility(show) {
+        val scheme = MaterialTheme.colorScheme
+        Column(Modifier.fillMaxWidth().background(scheme.surfaceContainer).navigationBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp)) {
+            when (val u = st) {
+                is UpdateState.Downloading -> {
+                    val pct = if (u.total > 0) (u.done * 100 / u.total).toInt() else 0
+                    Text("Downloading ${u.info.version} · $pct%", fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(8.dp))
+                    if (u.total > 0) LinearProgressIndicator(progress = { u.done / u.total.toFloat() }, Modifier.fillMaxWidth()) else LinearProgressIndicator(Modifier.fillMaxWidth())
+                }
+                is UpdateState.Installing -> {
+                    Text("Installing ${u.info.version}", fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(8.dp))
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                }
+                is UpdateState.Ready -> Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Version ${u.info.version} is downloaded", Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                    TextButton(onClick = { app.updates.install(u) }) { Text("Install") }
+                }
+                else -> Unit
+            }
+        }
+    }
+}
+
+@Composable
+private fun Tabs(tab: Tab, onTab: (Tab) -> Unit, push: (Screen) -> Unit, openRef: (Ref) -> Unit) {
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when (tab) {
-                Tab.Bible -> BibleTab()
-                Tab.You -> YouTab(openSettings)
-                else -> EmptyTab(tab)
+                Tab.Home -> HomeTab(openRef = openRef, openSearch = { onTab(Tab.Search) })
+                Tab.Bible -> BibleTab(openSearch = { push(Screen.Search) }, openVersions = { push(Screen.Versions) })
+                Tab.Search -> SearchScreen(onOpen = openRef, onBack = null, autofocus = false)
+                Tab.You -> YouTab(openSettings = { push(Screen.Settings) })
+                Tab.Plans -> PlansTab()
             }
         }
-        // The reader has its own bottom bar, so the tabs sit under it like in the reference.
         BottomTabs(tab, onTab)
     }
 }
@@ -140,6 +237,7 @@ private fun Tabs(tab: Tab, onTab: (Tab) -> Unit, openSettings: () -> Unit) {
 @Composable
 private fun BottomTabs(tab: Tab, onTab: (Tab) -> Unit) {
     val scheme = MaterialTheme.colorScheme
+    val update by LocalApp.current.updates.state.collectAsState()
     Column(Modifier.fillMaxWidth().background(scheme.background).navigationBarsPadding()) {
         HorizontalDivider(color = scheme.outlineVariant, thickness = 1.dp)
         Row(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
@@ -151,7 +249,11 @@ private fun BottomTabs(tab: Tab, onTab: (Tab) -> Unit) {
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Icon(t.icon, t.label, Modifier.size(28.dp), tint = color)
+                    Box {
+                        Icon(t.icon, t.label, Modifier.size(28.dp), tint = color)
+                        // A green dot on You when an update is waiting.
+                        if (t == Tab.You && update is UpdateState.Available) Box(Modifier.align(Alignment.TopEnd).size(9.dp).clip(androidx.compose.foundation.shape.CircleShape).background(Ink.dot))
+                    }
                     Text(t.label, color = color, fontSize = 14.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium)
                 }
             }
@@ -159,66 +261,45 @@ private fun BottomTabs(tab: Tab, onTab: (Tab) -> Unit) {
     }
 }
 
-/** The reader layout: top bar, page, and the play button with the chapter pill. The text arrives in 0.2. */
-@Composable
-private fun BibleTab() {
-    val scheme = MaterialTheme.colorScheme
-    Column(Modifier.fillMaxSize().statusBarsPadding()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Spacer(Modifier.weight(1f))
-            Box(
-                Modifier.padding(end = 8.dp).clip(MaterialTheme.shapes.extraLarge).background(scheme.surfaceContainer)
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-            ) { Text("BSB", style = MaterialTheme.typography.titleMedium) }
-        }
-        Column(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 28.dp), verticalArrangement = Arrangement.Center) {
-            Text(
-                "Bibles come in the next version.",
-                style = MaterialTheme.typography.bodyLarge.copy(fontFamily = SerifFont, fontSize = 22.sp),
-                color = scheme.onSurfaceVariant,
-            )
-        }
-        HorizontalDivider(color = scheme.outlineVariant, thickness = 1.dp)
-        Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(56.dp).clip(MaterialTheme.shapes.extraLarge).background(scheme.surfaceContainer), contentAlignment = Alignment.Center) {
-                Icon(Icons.Rounded.PlayArrow, "Play", Modifier.size(30.dp))
-            }
-            Spacer(Modifier.size(14.dp))
-            Row(
-                Modifier.weight(1f).height(56.dp).clip(MaterialTheme.shapes.extraLarge).background(scheme.surfaceContainer),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = {}) { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, "Previous chapter") }
-                Text("John 1", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                IconButton(onClick = {}) { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, "Next chapter") }
-            }
-        }
-    }
-}
-
 @Composable
 private fun YouTab(openSettings: () -> Unit) {
+    val update by LocalApp.current.updates.state.collectAsState()
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Spacer(Modifier.weight(1f))
-            IconButton(onClick = openSettings) { Icon(Icons.Outlined.Settings, "Settings", Modifier.size(28.dp)) }
+            Box {
+                IconButton(onClick = openSettings) { Icon(Icons.Outlined.Settings, "Settings", Modifier.size(28.dp)) }
+                if (update is UpdateState.Available) Box(Modifier.align(Alignment.TopEnd).padding(10.dp).size(9.dp).clip(androidx.compose.foundation.shape.CircleShape).background(Ink.dot))
+            }
         }
         Text("Highlights and notes show here.", Modifier.padding(24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
 @Composable
-private fun EmptyTab(tab: Tab) {
-    Box(Modifier.fillMaxSize().statusBarsPadding().padding(24.dp)) {
-        Text(tab.label, style = MaterialTheme.typography.headlineMedium)
+private fun PlansTab() {
+    Column(Modifier.fillMaxSize().statusBarsPadding().padding(24.dp)) {
+        Text("Plans", style = MaterialTheme.typography.headlineMedium)
+        Spacer(Modifier.height(12.dp))
+        Text("Reading plans come in a later version.", color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
 /** A title row with a back arrow, used on screens that open on top. */
 @Composable
-fun TopBack(title: String, onBack: () -> Unit) {
+fun TopBack(title: String, onBack: () -> Unit, subtitle: String? = null) {
     Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", Modifier.size(28.dp)) }
-        Text(title, style = MaterialTheme.typography.headlineSmall)
+        Column {
+            Text(title, style = MaterialTheme.typography.headlineSmall)
+            if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodyMedium)
+        }
+    }
+}
+
+@Composable
+fun PlayCircle(onClick: () -> Unit) {
+    Box(Modifier.size(48.dp).clip(androidx.compose.foundation.shape.CircleShape).background(MaterialTheme.colorScheme.surfaceContainerHighest).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+        Icon(Icons.Rounded.PlayArrow, "Listen", Modifier.size(26.dp))
     }
 }

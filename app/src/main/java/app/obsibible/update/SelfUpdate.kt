@@ -65,9 +65,10 @@ class SelfUpdate(private val context: Context, private val settings: SettingsSto
 
     val currentVersion: String get() = BuildConfig.VERSION_NAME
 
+    /** Checks when the app comes to the front, at most once an hour. */
     fun checkIfDue() {
         val s = settings.value
-        if (s.autoCheckUpdates && System.currentTimeMillis() - s.lastUpdateCheck > 12 * 3600_000L) check()
+        if (s.autoCheckUpdates && System.currentTimeMillis() - s.lastUpdateCheck > 3600_000L) check()
     }
 
     /** Called when playback fails: a fix may already be out. At most once every ten minutes. */
@@ -76,31 +77,52 @@ class SelfUpdate(private val context: Context, private val settings: SettingsSto
     }
 
     fun check() {
-        if (_state.value is UpdateState.Checking || _state.value is UpdateState.Downloading) return
-        _state.value = UpdateState.Checking
+        if (_state.value is UpdateState.Checking || _state.value is UpdateState.Downloading || _state.value is UpdateState.Installing) return
         scope.launch {
-            val s = settings.value
-            val errors = ArrayList<String>()
-            var found: UpdateInfo? = null
-            var reached = false
-            val sources = listOfNotNull(
-                s.updateMirror.takeIf { it.isNotBlank() },
-                s.updateRepo.takeIf { it.isNotBlank() }?.let { "https://api.github.com/repos/$it/releases/latest" },
-            )
-            for (src in sources) {
-                runCatching { fetch(src, s.updateToken) }
-                    .onSuccess { reached = true; if (found == null) found = it }
-                    .onFailure { errors += it.message ?: "failed" }
-                if (found != null) break
-            }
-            settings.update { it.copy(lastUpdateCheck = System.currentTimeMillis()) }
-            val info = found
-            _state.value = when {
-                info != null && newer(info.version, currentVersion) && info.version != s.ignoredVersion -> UpdateState.Available(info)
-                reached -> UpdateState.UpToDate
-                else -> UpdateState.Failed(errors.firstOrNull() ?: "No update source is set.")
+            runCatching { checkNow() }.onSuccess { info ->
+                if (info != null) UpdateNotice.show(context, info)
             }
         }
+    }
+
+    /**
+     * Asks the update sources now. Returns the new version when there is one to offer, else null.
+     * Also used by the background job, so it must not touch the UI.
+     */
+    suspend fun checkNow(): UpdateInfo? {
+        val busy = _state.value
+        if (busy is UpdateState.Downloading || busy is UpdateState.Installing || busy is UpdateState.Ready) return null
+        _state.value = UpdateState.Checking
+        val s = settings.value
+        val errors = ArrayList<String>()
+        var found: UpdateInfo? = null
+        var reached = false
+        val sources = listOfNotNull(
+            s.updateMirror.takeIf { it.isNotBlank() },
+            s.updateRepo.takeIf { it.isNotBlank() }?.let { "https://api.github.com/repos/$it/releases/latest" },
+        )
+        for (src in sources) {
+            runCatching { kotlinx.coroutines.withContext(Dispatchers.IO) { fetch(src, s.updateToken) } }
+                .onSuccess { reached = true; if (found == null) found = it }
+                .onFailure { errors += friendly(it) }
+            if (found != null) break
+        }
+        settings.update { it.copy(lastUpdateCheck = System.currentTimeMillis()) }
+        val info = found
+        val offer = info != null && newer(info.version, currentVersion) && info.version != s.ignoredVersion
+        _state.value = when {
+            offer -> UpdateState.Available(info!!)
+            reached -> UpdateState.UpToDate
+            else -> UpdateState.Failed(errors.firstOrNull() ?: "No update source is set.")
+        }
+        if (!reached && errors.isNotEmpty()) throw java.io.IOException(errors.first())
+        return if (offer) info else null
+    }
+
+    private fun friendly(t: Throwable): String = when (t) {
+        is java.net.UnknownHostException, is java.net.ConnectException -> "No internet. Try again later."
+        is java.net.SocketTimeoutException -> "GitHub took too long to answer. Try again later."
+        else -> t.message ?: "The check failed."
     }
 
     private fun fetch(url: String, token: String): UpdateInfo? {
@@ -109,6 +131,7 @@ class SelfUpdate(private val context: Context, private val settings: SettingsSto
         client.newCall(req).execute().use { r ->
             // The repo is public, so 404 means it has no release yet. Nothing to update to.
             if (r.code == 404) return null
+            if (r.code == 403) error("GitHub is busy. Try again in an hour.")
             if (!r.isSuccessful) error("Update source answered ${r.code}.")
             return parse(json.parseToJsonElement(r.body!!.string()).jsonObject, token.isNotBlank())
         }
