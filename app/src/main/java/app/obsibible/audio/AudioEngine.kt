@@ -354,6 +354,10 @@ class AudioEngine(private val app: ObsiBibleApp) {
         tick()
     }
 
+    /** The audio went on by itself from one chapter to the next. The reader reads it and clears it. */
+    data class Turn(val from: Ref, val to: Ref)
+    val turnedTo = kotlinx.coroutines.flow.MutableStateFlow<Turn?>(null)
+
     private fun onChapterEnd() {
         val u = _ui.value
         if (u.sleepMinutes == SLEEP_END_OF_CHAPTER) {
@@ -361,7 +365,11 @@ class AudioEngine(private val app: ObsiBibleApp) {
             return
         }
         val next = u.ref?.next()
-        if (app.settings.value.autoContinue && next != null) play(u.bible, next) else _ui.update { it.copy(playing = false) }
+        if (app.settings.value.autoContinue && next != null) {
+            play(u.bible, next)
+            // Tell the reader once, so it can turn the page if it was showing the chapter that ended.
+            turnedTo.value = Turn(u.ref, next)
+        } else _ui.update { it.copy(playing = false) }
     }
 
     private fun onError(e: PlaybackException) {

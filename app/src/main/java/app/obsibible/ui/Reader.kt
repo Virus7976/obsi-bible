@@ -104,10 +104,13 @@ fun BibleTab(openSearch: () -> Unit, openVersions: () -> Unit) {
     LaunchedEffect(ref.chapterRef, s.bible, bibleVersion) {
         chapter = withContext(Dispatchers.IO) { app.bibles.chapter(s.bible, ref.chapterRef) }
     }
-    // The audio moved on to the next chapter: turn the page with it.
-    LaunchedEffect(audio.ref) {
-        val a = audio.ref ?: return@LaunchedEffect
-        if (audio.active && audio.bible == s.bible && a != ref.chapterRef) app.settings.update { it.copy(lastRef = a.key) }
+    // The audio went on to the next chapter by itself: turn the page with it, but only when the page
+    // showed the chapter that ended. Opening another chapter never pulls the reader back to the audio.
+    val turn by app.audio.turnedTo.collectAsState()
+    LaunchedEffect(turn) {
+        val t = turn ?: return@LaunchedEffect
+        app.audio.turnedTo.value = null
+        if (audio.bible == s.bible && t.from == ref.chapterRef) app.settings.update { it.copy(lastRef = t.to.key) }
     }
 
     fun go(r: Ref?) { r ?: return; app.settings.update { it.copy(lastRef = r.key) } }

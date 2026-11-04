@@ -184,10 +184,19 @@ private fun UpdatePrompt(app: ObsiBibleApp, openSettings: () -> Unit) {
 }
 
 /** Release notes without the markdown heading, with plain bullets. */
-fun cleanNotes(notes: String): String = notes.lines()
-    .filter { !it.trim().startsWith("#") }
-    .joinToString("\n") { it.trim().replace(Regex("^[-*]\\s+"), "• ") }
-    .trim().take(800)
+fun cleanNotes(notes: String): String {
+    val lines = notes.lines().filter { it.isNotBlank() && !it.trim().startsWith("#") }
+        .map { it.trim().replace(Regex("^[-*]\\s+"), "• ") }
+    // Keep whole lines only, so a long list never stops in the middle of a word.
+    val out = ArrayList<String>()
+    var size = 0
+    for (l in lines) {
+        if (size + l.length > 1500 && out.isNotEmpty()) break
+        out += l
+        size += l.length + 1
+    }
+    return out.joinToString("\n")
+}
 
 /** A slim bar at the bottom while an update downloads and installs. */
 @Composable

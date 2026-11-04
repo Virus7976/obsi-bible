@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.background
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Timer
@@ -92,6 +94,19 @@ fun AudioSheet(idleTitle: String, onStart: () -> Unit, onDismiss: () -> Unit) {
                 Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, "Change voice", Modifier.size(22.dp), tint = scheme.onSurfaceVariant)
             }
             if (credit.isNotBlank()) Text(credit, color = scheme.onSurfaceVariant.copy(alpha = 0.7f), fontSize = 13.sp)
+            // Playing one chapter while reading another: offer the one on the page.
+            if (u.active && u.ref?.label != null && u.ref?.label != idleTitle) {
+                Spacer(Modifier.height(14.dp))
+                Row(
+                    Modifier.clip(androidx.compose.foundation.shape.CircleShape).background(scheme.surfaceContainerHighest)
+                        .clickable { onStart() }.padding(horizontal = 18.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Rounded.PlayArrow, null, Modifier.size(20.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Play $idleTitle", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                }
+            }
             u.error?.let {
                 Spacer(Modifier.height(8.dp))
                 Text(it, color = scheme.error, fontSize = 14.sp, textAlign = TextAlign.Center)
