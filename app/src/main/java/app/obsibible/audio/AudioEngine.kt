@@ -14,6 +14,7 @@ import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultDataSource
+import app.obsibible.bible.EsvApi
 import androidx.media3.datasource.FileDataSource
 import androidx.media3.datasource.TransferListener
 import androidx.media3.datasource.cache.CacheDataSource
@@ -152,12 +153,20 @@ class AudioEngine(private val app: ObsiBibleApp) {
     // ---------- starting ----------
 
     /** Plays [ref]'s chapter in [bible], from [fromVerse] (0 = the start). */
-    fun play(bible: String, ref: Ref, fromVerse: Int = 0) = start(bible, ref, fromVerse, pickSource(bible))
+    fun play(bible: String, ref: Ref, fromVerse: Int = 0) {
+        val src = pickSource(bible)
+        if (!app.bibles.isOnline(bible)) return start(bible, ref, fromVerse, src)
+        _ui.update { it.copy(loading = true, error = null) }
+        main.launch {
+            withContext(Dispatchers.IO) { app.bibles.chapter(bible, ref.chapterRef) }
+            start(bible, ref, fromVerse, src)
+        }
+    }
 
     private fun start(bible: String, ref: Ref, fromVerse: Int, src: Source) {
         val chapter = app.bibles.chapter(bible, ref.chapterRef)
         if (chapter == null) {
-            _ui.update { it.copy(error = "This chapter is not on the phone yet.") }
+            _ui.update { it.copy(error = app.bibles.onlineError.value ?: "This chapter is not on the phone yet.", loading = false) }
             return
         }
         val verses = chapter.verses()
@@ -202,10 +211,11 @@ class AudioEngine(private val app: ObsiBibleApp) {
         val s = app.settings.value
         val (kind, id) = s.audioSource.split(':', limit = 2).let { it[0] to it.getOrElse(1) { "" } }
         return when {
-            kind == "narrator" && Narrators.forBible(bible).isNotEmpty() -> Source.Recorded(Narrators.byId(id) ?: Narrators.all[0])
+            kind == "narrator" && Narrators.forBible(bible).isNotEmpty() ->
+                Source.Recorded(Narrators.forBible(bible).firstOrNull { it.id == id } ?: Narrators.forBible(bible)[0])
             kind == "cloud" && s.cloudKey.isNotBlank() && s.cloudRegion.isNotBlank() -> Source.Cloud(s.cloudKey, s.cloudRegion, id.ifBlank { s.cloudVoice })
             kind == "phone" -> Source.Phone(id)
-            Narrators.forBible(bible).isNotEmpty() -> Source.Recorded(Narrators.all[0])
+            Narrators.forBible(bible).isNotEmpty() -> Source.Recorded(Narrators.forBible(bible)[0])
             else -> Source.Phone("")
         }
     }
@@ -226,7 +236,7 @@ class AudioEngine(private val app: ObsiBibleApp) {
     }
 
     private fun credit(src: Source?): String = when (src) {
-        is Source.Recorded -> "Recorded · public domain"
+        is Source.Recorded -> src.narrator.credit
         is Source.Phone -> "Works offline"
         is Source.Cloud -> "Uses your Microsoft key"
         null -> ""
@@ -366,7 +376,7 @@ class AudioEngine(private val app: ObsiBibleApp) {
         }
         val next = u.ref?.next()
         if (app.settings.value.autoContinue && next != null) {
-            play(u.bible, next)
+            play(u.bible, next) // online Bibles load the next chapter first
             // Tell the reader once, so it can turn the page if it was showing the chapter that ended.
             turnedTo.value = Turn(u.ref, next)
         } else _ui.update { it.copy(playing = false) }
@@ -440,6 +450,7 @@ class AudioEngine(private val app: ObsiBibleApp) {
     }
 
     private fun fetchTimes(n: Narrator, ref: Ref): List<VerseTime> {
+        if (n.timingUrl(ref).isBlank()) return emptyList()
         val file = File(timingDir, "${n.id}/${ref.book}_${ref.chapter}.json")
         if (file.exists()) return json.decodeFromString(ListSerializer(VerseTime.serializer()), file.readText())
         val req = Request.Builder().url(n.timingUrl(ref)).header("User-Agent", "ObsiBible").build()
@@ -506,20 +517,32 @@ class AudioEngine(private val app: ObsiBibleApp) {
             .setUpstreamDataSourceFactory(DefaultDataSource.Factory(app))
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
 
-        override fun createDataSource(): DataSource = Router(web.createDataSource())
+        private val plain = DefaultDataSource.Factory(app)
+
+        override fun createDataSource(): DataSource = Router(web.createDataSource(), plain.createDataSource())
     }
 
-    private inner class Router(private val web: DataSource) : DataSource {
+    private inner class Router(private val web: DataSource, private val stream: DataSource) : DataSource {
         private val file = FileDataSource()
         private var current: DataSource? = null
 
         override fun addTransferListener(transferListener: TransferListener) {
             web.addTransferListener(transferListener)
+            stream.addTransferListener(transferListener)
             file.addTransferListener(transferListener)
         }
 
         override fun open(dataSpec: DataSpec): Long {
             val uri = dataSpec.uri
+            if (uri.scheme == "esv") {
+                // Runs on the player's loading thread, so the network call is allowed here.
+                val ref = Ref.fromKey(uri.lastPathSegment ?: "") ?: throw IOException("Unknown chapter.")
+                val key = app.settings.value.esvKey
+                if (key.isBlank()) throw IOException("Add your ESV key in Versions.")
+                val where = EsvApi.audioLocation(key, ref)
+                current = stream
+                return stream.open(dataSpec.buildUpon().setUri(Uri.parse(where)).build())
+            }
             return if (uri.scheme == "voice") {
                 val f = lineFile(uri.lastPathSegment ?: "")
                 current = file

@@ -32,7 +32,9 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -101,7 +103,9 @@ fun BibleTab(openSearch: () -> Unit, openVersions: () -> Unit) {
         if (chapterMarks.any { it.id == id }) { openMark = id; selected = emptySet(); app.openMark.value = null }
     }
 
-    LaunchedEffect(ref.chapterRef, s.bible, bibleVersion) {
+    var retry by remember { mutableStateOf(0) }
+    LaunchedEffect(ref.chapterRef, s.bible, bibleVersion, retry) {
+        if (app.bibles.isOnline(s.bible)) chapter = null // show the loading line, not the last chapter under a new name
         chapter = withContext(Dispatchers.IO) { app.bibles.chapter(s.bible, ref.chapterRef) }
     }
     // The audio went on to the next chapter by itself: turn the page with it, but only when the page
@@ -184,8 +188,29 @@ fun BibleTab(openSearch: () -> Unit, openVersions: () -> Unit) {
                     }
                 }
                 install is InstallState.Failed -> Text((install as InstallState.Failed).message, Modifier.padding(32.dp), color = scheme.error)
+                app.bibles.isOnline(s.bible) -> {
+                    val err by app.bibles.onlineError.collectAsState()
+                    Column(Modifier.fillMaxSize().padding(40.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                        if (err == null) { CircularProgressIndicator(); Spacer(Modifier.height(14.dp)); Text("Loading ${ref.chapterRef.label}", color = scheme.onSurfaceVariant) }
+                        else {
+                            Text(err!!, textAlign = TextAlign.Center, color = scheme.onSurfaceVariant)
+                            Spacer(Modifier.height(14.dp))
+                            TextButton(onClick = { retry++ }) { Text("Try again") }
+                        }
+                    }
+                }
                 else -> Text("${ref.label} is not in this Bible.", Modifier.padding(32.dp).align(Alignment.Center), color = scheme.onSurfaceVariant)
             }
+        }
+        // Online Bibles must show their copyright. The ESV links to esv.org as Crossway asks.
+        if (chapter != null && app.bibles.isOnline(s.bible)) {
+            val info = app.bibles.installed.value.firstOrNull { it.id == s.bible }
+            val uri = androidx.compose.ui.platform.LocalUriHandler.current
+            val line = if (s.bible == "ESV") "ESV® Bible · © 2001 Crossway · esv.org" else info?.copyright.orEmpty().lineSequence().firstOrNull().orEmpty().take(90)
+            if (line.isNotBlank()) Text(
+                line, color = scheme.onSurfaceVariant, fontSize = 12.sp, maxLines = 1,
+                modifier = Modifier.fillMaxWidth().clickable { if (s.bible == "ESV") uri.openUri("https://www.esv.org") }.padding(horizontal = 20.dp, vertical = 6.dp),
+            )
         }
 
         HorizontalDivider(color = scheme.outlineVariant)

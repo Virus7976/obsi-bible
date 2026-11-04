@@ -13,6 +13,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 
 /** Holds the app's long-lived parts. Screens reach them through LocalApp. */
 class ObsiBibleApp : Application() {
@@ -43,6 +46,11 @@ class ObsiBibleApp : Application() {
         settings = SettingsStore(this)
         updates = SelfUpdate(this, settings)
         bibles = Bibles(this)
+        bibles.keys = { settings.value.let { Triple(it.esvKey, it.apiBibleKey, it.onlineBibles) } }
+        // New or changed keys show their Bibles at once.
+        appScope.launch {
+            settings.state.map { Triple(it.esvKey, it.apiBibleKey, it.onlineBibles) }.distinctUntilChanged().collect { bibles.refreshOnline() }
+        }
         audio = AudioEngine(this)
         marks = app.obsibible.data.MarksStore(this)
         UpdateNotice.schedule(this)

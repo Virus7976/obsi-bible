@@ -133,7 +133,7 @@ fun VersionsScreen(onBack: () -> Unit) {
     }
 
     Column(Modifier.fillMaxSize()) {
-        TopBack("Versions", onBack, subtitle = "${installed.size} on this phone · all work offline")
+        TopBack("Versions", onBack, subtitle = if (installed.size == 1) "1 Bible" else "${installed.size} Bibles")
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
             Spacer(Modifier.height(16.dp))
             Text("Downloaded", style = MaterialTheme.typography.headlineSmall)
@@ -153,6 +153,10 @@ fun VersionsScreen(onBack: () -> Unit) {
                                 Spacer(Modifier.width(6.dp))
                                 Text(if (voices > 0) voices.toString() else "Voice", fontSize = 15.sp)
                             }
+                            if (app.bibles.isOnline(b.id)) {
+                                Spacer(Modifier.width(8.dp))
+                                Text("Online", color = scheme.onSurfaceVariant, fontSize = 15.sp)
+                            }
                         }
                         Spacer(Modifier.height(4.dp))
                         Text(b.name, color = scheme.onSurfaceVariant, fontSize = 18.sp)
@@ -160,6 +164,8 @@ fun VersionsScreen(onBack: () -> Unit) {
                     if (b.id == s.bible) Icon(Icons.Rounded.Check, "In use", Modifier.size(26.dp))
                 }
             }
+            Spacer(Modifier.height(28.dp))
+            OnlineBibles()
             Spacer(Modifier.height(28.dp))
             Text("Add a Bible", style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(8.dp))

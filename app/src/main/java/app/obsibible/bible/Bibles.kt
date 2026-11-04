@@ -24,6 +24,9 @@ data class Hit(val ref: Ref, val text: String)
 /** What a word search found. [fixed] is the query after a typo was fixed. [partial] means not every word is in each verse. */
 data class Found(val total: Int, val hits: List<Hit>, val fixed: String? = null, val partial: Boolean = false)
 
+/** The most verses of one online Bible kept on the phone. */
+object OnlineCap { const val VERSES = 500 }
+
 /** Where a search looks. */
 enum class Scope(val label: String) { All("All"), Old("Old Testament"), New("New Testament"), Book("This book") }
 
@@ -65,10 +68,80 @@ class Bibles(private val context: Context) {
 
     fun has(id: String) = File(dir, "$id.db").exists()
 
+    private var local: List<BibleInfo> = emptyList()
+
     private fun refresh() {
-        _installed.value = dir.listFiles { f -> f.name.endsWith(".db") }.orEmpty().mapNotNull { f ->
+        local = dir.listFiles { f -> f.name.endsWith(".db") }.orEmpty().mapNotNull { f ->
             runCatching { info(f.nameWithoutExtension) }.getOrNull()
         }.sortedBy { if (it.id == "BSB") "" else it.abbreviation }
+        _installed.value = local + online()
+    }
+
+    // ---------- online Bibles (the user's own keys) ----------
+
+    /** The keys: ESV key, API.Bible key, and the API.Bible Bibles the user added ("id|abbr|name|copyright"). */
+    var keys: () -> Triple<String, String, List<String>> = { Triple("", "", emptyList()) }
+
+    private val _onlineError = MutableStateFlow<String?>(null)
+    /** Why the last online chapter could not load, or null. */
+    val onlineError: StateFlow<String?> = _onlineError.asStateFlow()
+
+    fun isOnline(id: String) = id == EsvApi.ID || id.startsWith(ApiBible.PREFIX)
+
+    private fun online(): List<BibleInfo> {
+        val (esv, ab, list) = keys()
+        val out = ArrayList<BibleInfo>()
+        if (esv.isNotBlank()) out += EsvApi.info
+        if (ab.isNotBlank()) list.forEach { e ->
+            val p = e.split('|')
+            if (p.size >= 3) out += BibleInfo(ApiBible.PREFIX + p[0], p[1], p[2], p.getOrElse(3) { "" })
+        }
+        return out
+    }
+
+    /** Call when the keys change. */
+    fun refreshOnline() { _installed.value = local + online(); _version.value++ }
+
+    private fun onlineDir(id: String) = File(context.filesDir, "online/" + id.replace(Regex("[^A-Za-z0-9_-]"), "_")).apply { mkdirs() }
+
+    private fun onlineChapter(id: String, ref: Ref): Chapter? {
+        val d = onlineDir(id)
+        d.listFiles { f -> f.name.startsWith("${ref.book}.${ref.chapter}.") }?.firstOrNull()?.let { f ->
+            runCatching { json.decodeFromString(Chapter.serializer(), f.readText()) }.getOrNull()?.let { f.setLastModified(System.currentTimeMillis()); return it }
+        }
+        // Never reach the network from the main thread; screens load chapters in the background.
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) return null
+        val (esv, ab, _) = keys()
+        return try {
+            val ch = if (id == EsvApi.ID) EsvApi.chapter(esv, ref) else ApiBible.chapter(ab, id.removePrefix(ApiBible.PREFIX), ref)
+            _onlineError.value = null
+            val count = ch.verses().size
+            File(d, "${ref.book}.${ref.chapter}.$count.json").writeText(json.encodeToString(Chapter.serializer(), ch))
+            trimCache(d)
+            ch
+        } catch (e: Exception) {
+            _onlineError.value = (e.message ?: "Could not reach the Bible service.").let { if (e is java.net.UnknownHostException) "No internet. This chapter is not on the phone yet." else it }
+            null
+        }
+    }
+
+    /**
+     * Keeps at most 500 verses, and at most half of any book's chapters, on the phone. Crossway
+     * sets this for the ESV; the same cap is used for every online Bible to stay safe.
+     */
+    private fun trimCache(d: File) {
+        val files = d.listFiles { f -> f.name.endsWith(".json") }.orEmpty().sortedBy { it.lastModified() }.toMutableList()
+        fun verses(f: File) = f.name.split('.').getOrNull(2)?.toIntOrNull() ?: 30
+        for ((book, list) in files.groupBy { it.name.substringBefore('.') }) {
+            val max = ((Books.get(book)?.chapters ?: 2) / 2).coerceAtLeast(1)
+            list.dropLast(max).forEach { it.delete(); files.remove(it) }
+        }
+        var total = files.sumOf { verses(it) }
+        while (total > OnlineCap.VERSES && files.size > 1) {
+            val f = files.removeAt(0)
+            total -= verses(f)
+            f.delete()
+        }
     }
 
     fun info(id: String): BibleInfo? {
@@ -91,6 +164,11 @@ class Bibles(private val context: Context) {
     fun chapter(id: String, ref: Ref): Chapter? {
         val key = "$id/${ref.book}.${ref.chapter}"
         synchronized(chapterCache) { chapterCache[key]?.let { return it } }
+        if (isOnline(id)) {
+            val ch = onlineChapter(id, ref) ?: return null
+            synchronized(chapterCache) { chapterCache[key] = ch }
+            return ch
+        }
         val db = db(id) ?: return null
         val doc = db.rawQuery("SELECT doc FROM chapters WHERE book=? AND ch=?", arrayOf(ref.book, ref.chapter.toString())).use { c ->
             if (c.moveToFirst()) c.getString(0) else null
@@ -116,6 +194,11 @@ class Bibles(private val context: Context) {
      * every word, verses with most of the words are shown ([Found.partial]).
      */
     fun search(id: String, query: String, where: Scope, book: String?, limit: Int = 300): Found {
+        if (isOnline(id)) {
+            val (esv, ab, _) = keys()
+            return runCatching { if (id == EsvApi.ID) EsvApi.search(esv, query) else ApiBible.search(ab, id.removePrefix(ApiBible.PREFIX), query) }
+                .getOrElse { Found(0, emptyList()) }
+        }
         val db = db(id) ?: return Found(0, emptyList())
         val (lo, hi) = range(where, book)
         val phrase = Regex("\"([^\"]+)\"").containsMatchIn(query)

@@ -16,6 +16,8 @@ data class Clip(
     val color: String = "",
     val copyright: String = "",
     val at: Long = System.currentTimeMillis(),
+    /** Links added before sending: [[Note]] or a verse link. */
+    val links: List<String> = emptyList(),
 )
 
 /** A finished note: its file name, folder, and Markdown. */
@@ -55,7 +57,7 @@ object NoteBuilder {
 
     val VARIABLES = listOf(
         "reference", "book", "chapter", "verses", "translation", "text", "note",
-        "link", "tags", "date", "time", "color", "copyright",
+        "link", "links", "tags", "date", "time", "title", "color", "copyright",
     )
 
     fun link(ref: Ref) = "obsibible://ref/${ref.key}"
@@ -84,6 +86,8 @@ object NoteBuilder {
             "time" to SimpleDateFormat("HH:mm", Locale.US).format(Date(c.at)),
             "color" to c.color,
             "copyright" to c.copyright,
+            "title" to r.label,
+            "links" to c.links.joinToString(" · "),
         )
     }
 
@@ -108,6 +112,11 @@ object NoteBuilder {
     fun safeName(s: String): String =
         s.replace(':', '.').replace(Regex("[/\\\\?*\"<>|#^\\[\\]]"), " ").replace(Regex("\\s+"), " ").trim().ifEmpty { "Verse" }
 
+    /** Links go where the template puts {{links}}, or at the end when it has no such place. */
+    private fun withLinks(md: String, template: String, links: List<String>): String =
+        if (links.isEmpty() || template.contains(Regex("\\{\\{\\s*links\\s*\\}\\}"))) md
+        else md.trimEnd() + "\n\n" + links.joinToString(" · ") + "\n"
+
     fun build(
         c: Clip,
         append: Boolean,
@@ -119,9 +128,15 @@ object NoteBuilder {
     ): BuiltNote {
         val v = values(c)
         return if (append) {
-            BuiltNote(safeName(appendFile), folder.trim('/'), fill(entry.ifBlank { DEFAULT_ENTRY }, v), true)
+            val e = entry.ifBlank { DEFAULT_ENTRY }
+            BuiltNote(safeName(appendFile), folder.trim('/'), withLinks(fill(e, v), e, c.links), true)
         } else {
-            BuiltNote(safeName(fill(nameTemplate.ifBlank { DEFAULT_NAME }, v).trim()), folder.trim('/'), fill(template.ifBlank { DEFAULT_TEMPLATE }, v), false)
+            val t = template.ifBlank { DEFAULT_TEMPLATE }
+            // A template that places the tags itself ({{tags}} or {{tagsYaml}}) is left as written.
+            val placesTags = Regex("\\{\\{\\s*tags(Yaml)?\\s*\\}\\}").containsMatchIn(t)
+            val linked = withLinks(fill(t, v), t, c.links)
+            val md = if (placesTags) linked else VaultTemplates.mergeTags(linked, c.tags)
+            BuiltNote(safeName(fill(nameTemplate.ifBlank { DEFAULT_NAME }, v).trim()), folder.trim('/'), md, false)
         }
     }
 }

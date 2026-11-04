@@ -29,6 +29,8 @@ data class AppSettings(
     val esvKey: String = "",
     val youVersionKey: String = "",
     val apiBibleKey: String = "",
+    // API.Bible Bibles the user added: "id|abbreviation|name|copyright"
+    val onlineBibles: List<String> = emptyList(),
     // updates
     val autoCheckUpdates: Boolean = true,
     val updateRepo: String = "Virus7976/obsi-bible",
@@ -50,6 +52,9 @@ data class AppSettings(
     val clipName: String = "",
     val clipTemplate: String = "",
     val clipEntry: String = "",
+    // The vault note used as the template for new notes ("" = built in), and its name.
+    val clipVaultTemplate: String = "",
+    val clipVaultTemplateName: String = "",
 )
 
 /**
