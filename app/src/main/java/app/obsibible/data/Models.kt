@@ -64,6 +64,36 @@ data class AppSettings(
     // The vault note used as the template for new notes ("" = built in), and its name.
     val clipVaultTemplate: String = "",
     val clipVaultTemplateName: String = "",
+    /** Note templates, as in ObsiTube and Obsidian's Web Clipper. Empty until the built-in ones are added. */
+    val templates: List<ClipTemplate> = emptyList(),
+    val selectedTemplateId: String = "",
+    /** Tags added to every note sent to Obsidian. */
+    val autoTags: List<String> = emptyList(),
+)
+
+@Serializable
+data class TemplateProperty(
+    val id: String,
+    val name: String,
+    val value: String = "",
+    val type: String = "",
+    /** A box for it opens before the note saves. The value is what the box starts with. */
+    val ask: Boolean = false,
+)
+
+@Serializable
+data class ClipTemplate(
+    val id: String,
+    val name: String,
+    /** create | overwrite | append-specific | prepend-specific */
+    val behavior: String = "create",
+    val noteNameFormat: String = "{{reference}}",
+    val path: String = "Bible",
+    val noteContentFormat: String = "{{content}}",
+    val properties: List<TemplateProperty> = emptyList(),
+    /** The vault note this came from (its path), and the document to read it again. */
+    val source: String = "",
+    val sourceUri: String = "",
 )
 
 /**

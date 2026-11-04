@@ -25,11 +25,18 @@ object Sender {
         val fileName = "${note.name}.md"
         val existing = dir.findFile(fileName)
         return runCatching {
-            if (note.append && existing != null) {
+            if ((note.mode == "append" || note.mode == "prepend") && existing != null) {
                 val old = context.contentResolver.openInputStream(existing.uri)?.bufferedReader()?.use { it.readText() }.orEmpty()
-                val text = if (old.isBlank()) note.markdown else old.trimEnd() + "\n\n" + note.markdown
+                val text = when {
+                    old.isBlank() -> note.markdown
+                    note.mode == "prepend" -> prepend(old, note.body)
+                    else -> old.trimEnd() + "\n\n" + note.body
+                }
                 context.contentResolver.openOutputStream(existing.uri, "wt")!!.bufferedWriter().use { it.write(text) }
                 SendResult(true, "Added to ${note.name}.", path(note, note.name))
+            } else if (note.mode == "overwrite" && existing != null) {
+                context.contentResolver.openOutputStream(existing.uri, "wt")!!.bufferedWriter().use { it.write(note.markdown) }
+                SendResult(true, "Saved over ${note.name}.", path(note, note.name))
             } else {
                 var name = note.name
                 if (existing != null) {
@@ -44,16 +51,28 @@ object Sender {
         }.getOrElse { SendResult(false, "Could not write the note.") }
     }
 
+    /** Puts [body] after the note's properties, before the rest. */
+    private fun prepend(old: String, body: String): String {
+        val t = old.replace("\r\n", "\n")
+        if (t.startsWith("---")) {
+            val end = Regex("\n---[ \t]*(\n|$)").find(t, 3)
+            if (end != null) return t.substring(0, end.range.last + 1) + "\n" + body.trimEnd() + "\n\n" + t.substring(end.range.last + 1).trimStart('\n')
+        }
+        return body.trimEnd() + "\n\n" + t
+    }
+
     private fun path(note: BuiltNote, name: String) = listOf(note.folder, name).filter { it.isNotBlank() }.joinToString("/")
 
     /** Sends through Obsidian's obsidian://new link. Obsidian makes the file in the vault. */
     fun viaLink(context: Context, note: BuiltNote, vault: String): SendResult {
         val file = path(note, note.name)
         val v = if (vault.isBlank()) "" else "vault=${Uri.encode(vault)}&"
-        val mode = if (note.append) "&append=true" else ""
+        val mode = when (note.mode) { "append" -> "&append=true"; "prepend" -> "&prepend=true"; "overwrite" -> "&overwrite=true"; else -> "" }
         val base = "obsidian://new?${v}file=${Uri.encode(file)}$mode"
-        val full = "$base&content=${Uri.encode(note.markdown)}"
-        val uri = if (full.length <= 40_000) full else { copy(context, note.markdown); "$base&clipboard=true" }
+        // Adding to a note sends only the new part, not a second set of properties.
+        val text = if (note.mode == "append" || note.mode == "prepend") note.body else note.markdown
+        val full = "$base&content=${Uri.encode(text)}"
+        val uri = if (full.length <= 40_000) full else { copy(context, text); "$base&clipboard=true" }
         return try {
             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             SendResult(true, "Sent to Obsidian.", file)

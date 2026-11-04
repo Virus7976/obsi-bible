@@ -91,6 +91,7 @@ sealed interface Screen {
     data object Search : Screen
     data object Versions : Screen
     data object Setup : Screen
+    data class Template(val id: String) : Screen
 }
 
 @Composable
@@ -127,10 +128,11 @@ fun AppRoot(app: ObsiBibleApp) {
                             holder.SaveableStateProvider(screen.toString()) {
                                 when (screen) {
                                     Screen.Tabs -> Tabs(tab, onTab = { tab = it }, push = ::push, openRef = ::openRef)
-                                    Screen.Settings -> SettingsScreen(onBack = ::pop, openSetup = { push(Screen.Setup) })
+                                    Screen.Settings -> SettingsScreen(onBack = ::pop, openSetup = { push(Screen.Setup) }, openTemplate = { push(Screen.Template(it)) })
                                     Screen.Search -> SearchScreen(onOpen = ::openRef, onBack = ::pop, autofocus = true)
                                     Screen.Versions -> VersionsScreen(onBack = ::pop, openSetup = { push(Screen.Setup) })
                                     Screen.Setup -> SetupScreen(onDone = ::pop)
+                                    is Screen.Template -> TemplateEditorScreen(screen.id, onBack = ::pop)
                                 }
                             }
                         }

@@ -1,5 +1,9 @@
 package app.obsibible.ui
 
+import app.obsibible.obsidian.Template
+import app.obsibible.obsidian.TemplateSync
+import app.obsibible.obsidian.TemplateNote
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.foundation.layout.widthIn
 import android.content.Intent
 import android.net.Uri
@@ -500,34 +504,29 @@ fun ClipSheet(clip: Clip, color: Int, onSent: () -> Unit, onDismiss: () -> Unit)
     val context = LocalContext.current
     val scheme = MaterialTheme.colorScheme
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var append by remember { mutableStateOf(s.clipAppend) }
     // Tags and links added here go only into the note that is sent.
     val tags = remember(clip) { mutableStateListOf(*clip.tags.toTypedArray()) }
     val links = remember(clip) { mutableStateListOf<String>() }
     var tagText by remember { mutableStateOf("") }
-    val known = remember { app.marks.tags() }
     var linking by remember { mutableStateOf(false) }
-    fun addTag(t: String) {
-        val c = t.trim().removePrefix("#").replace(' ', '-')
-        if (c.isNotEmpty() && c !in tags) tags += c
-    }
-    // A note from the vault used as the template. Read again each time the sheet opens.
-    var templates by remember { mutableStateOf<List<VaultTemplates.Entry>?>(null) }
-    var vaultText by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(s.clipVaultTemplate) {
-        vaultText = if (s.clipVaultTemplate.isBlank()) null
-        else withContext(Dispatchers.IO) { VaultTemplates.read(context, s.clipVaultTemplate)?.let { VaultTemplates.prepare(it, clip.at) } }
-    }
+    // The template: the default one, or one picked here (which becomes the default).
+    var templateId by remember { mutableStateOf(s.selectedTemplateId) }
+    val template = s.templates.firstOrNull { it.id == templateId } ?: s.templates.firstOrNull() ?: TemplateNote.VERSE
+    var choosing by remember { mutableStateOf<List<VaultTemplates.Entry>?>(null) }
+    // Answers for the properties marked "Ask me", by property id.
+    val answers = remember(template.id) { mutableStateMapOf<String, String>() }
+    val vars = remember(clip) { TemplateNote.variables(clip) }
     val tagList = tags.toList()
     val linkList = links.toList()
-    val built = remember(clip, append, s.clipFolder, s.clipName, s.clipFile, s.clipTemplate, s.clipEntry, vaultText, tagList, linkList) {
-        NoteBuilder.build(clip.copy(tags = tagList, links = linkList), append, s.clipFolder, s.clipName, s.clipFile, vaultText ?: s.clipTemplate, s.clipEntry)
+    val built = remember(clip, template, tagList, linkList, answers.toMap(), s.autoTags) {
+        TemplateNote.build(template, clip.copy(tags = tagList, links = linkList), s, answers.toMap())
     }
     var markdown by remember(built) { mutableStateOf(built.markdown) }
     var showMarkdown by remember { mutableStateOf(false) }
     val pick = rememberVaultPicker { }
     val scope = rememberCoroutineScope()
     val folderName = remember(s.vaultTree) { if (s.vaultTree.isBlank()) null else Sender.folderName(context, s.vaultTree) }
+    val adds = built.mode == "append" || built.mode == "prepend"
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state, containerColor = scheme.surfaceContainer, contentColor = scheme.onSurface, dragHandle = { SheetHandle() }) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 22.dp).padding(bottom = 20.dp)) {
@@ -537,15 +536,15 @@ fun ClipSheet(clip: Clip, color: Int, onSent: () -> Unit, onDismiss: () -> Unit)
             // the note, as it will look
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(scheme.surfaceContainerHighest).padding(18.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.Diamond, null, Modifier.size(16.dp), tint = Color(0xFFA88BFA))
+                    Icon(Icons.Rounded.Diamond, null, Modifier.size(16.dp), tint = LinkColor)
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        if (append) built.name else built.name + ".md",
+                        listOf(built.folder, built.name + ".md").filter { it.isNotBlank() }.joinToString("/"),
                         style = MaterialTheme.typography.labelLarge, color = scheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
                 }
                 Spacer(Modifier.height(12.dp))
-                Text("${clip.ref.label} · ${clip.translation}", style = MaterialTheme.typography.titleMedium, color = Color(0xFFA88BFA))
+                Text("${clip.ref.label} · ${clip.translation}", style = MaterialTheme.typography.titleMedium, color = LinkColor)
                 Spacer(Modifier.height(8.dp))
                 QuoteCard(clip.text, color, maxLines = 6)
                 if (clip.note.isNotBlank()) {
@@ -558,36 +557,48 @@ fun ClipSheet(clip: Clip, color: Int, onSent: () -> Unit, onDismiss: () -> Unit)
                 }
                 if (tagList.isNotEmpty()) {
                     Spacer(Modifier.height(10.dp))
-                    Text(tagList.joinToString(" ") { "#$it" }, color = Color(0xFFA88BFA), style = MaterialTheme.typography.bodyMedium)
+                    Text(tagList.joinToString(" ") { "#$it" }, color = LinkColor, style = MaterialTheme.typography.bodyMedium)
                 }
             }
 
             // template
-            if (!append) {
-                Spacer(Modifier.height(18.dp))
-                Text("Template", style = MaterialTheme.typography.titleSmall, color = scheme.onSurfaceVariant)
-                Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable {
-                        if (s.vaultTree.isBlank()) pick()
-                        else scope.launch { templates = withContext(Dispatchers.IO) { VaultTemplates.list(context, s.vaultTree) } }
-                    }.padding(vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(Icons.Outlined.Description, null, Modifier.size(22.dp), tint = scheme.onSurfaceVariant)
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(s.clipVaultTemplateName.ifBlank { "Built in" }, style = MaterialTheme.typography.bodyLarge)
-                        Text(
-                            if (s.vaultTree.isBlank()) "Pick your vault folder to use its templates." else "Use a note from your Templates folder.",
-                            style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant,
+            Spacer(Modifier.height(18.dp))
+            Text("Template", style = MaterialTheme.typography.titleSmall, color = scheme.onSurfaceVariant)
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable {
+                    scope.launch { choosing = withContext(Dispatchers.IO) { if (s.vaultTree.isBlank()) emptyList() else VaultTemplates.list(context, s.vaultTree) } }
+                }.padding(vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Outlined.Description, null, Modifier.size(22.dp), tint = scheme.onSurfaceVariant)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(template.name, style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        when (built.mode) { "append" -> "Adds to ${built.name}"; "prepend" -> "Adds to the top of ${built.name}"; "overwrite" -> "Saves over ${built.name}"; else -> "Makes a new note" },
+                        style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant,
+                    )
+                }
+                Text("Change", style = MaterialTheme.typography.labelLarge)
+            }
+
+            // the properties the template asks for
+            val asks = template.properties.filter { it.ask }
+            if (asks.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    asks.forEach { p ->
+                        val start = remember(p.id) { Template.render(p.value, vars) }
+                        TypedField(
+                            p.name, p.type, answers[p.id] ?: start, { answers[p.id] = it },
+                            vars = vars, vault = s.vaultTree.ifBlank { null }, insert = { f -> vars[f.key].orEmpty() },
                         )
                     }
-                    Text("Change", style = MaterialTheme.typography.labelLarge)
                 }
             }
 
             // links
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(14.dp))
             Text("Links", style = MaterialTheme.typography.titleSmall, color = scheme.onSurfaceVariant)
             Spacer(Modifier.height(8.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -608,14 +619,8 @@ fun ClipSheet(clip: Clip, color: Int, onSent: () -> Unit, onDismiss: () -> Unit)
             Spacer(Modifier.height(8.dp))
             TagEditor(tags, tagText) { tagText = it }
 
-            Spacer(Modifier.height(18.dp))
-            Text("Where", style = MaterialTheme.typography.titleSmall, color = scheme.onSurfaceVariant)
-            Spacer(Modifier.height(8.dp))
-            Row(Modifier.fillMaxWidth().clip(CircleShape).background(scheme.surfaceContainerHighest).padding(4.dp)) {
-                Segment("New note", !append, Modifier.weight(1f)) { append = false; app.settings.update { it.copy(clipAppend = false) } }
-                Segment("Add to ${s.clipFile}", append, Modifier.weight(1f)) { append = true; app.settings.update { it.copy(clipAppend = true) } }
-            }
-            Spacer(Modifier.height(12.dp))
+            // where it goes
+            Spacer(Modifier.height(14.dp))
             Row(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable(onClick = pick).padding(vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -624,7 +629,7 @@ fun ClipSheet(clip: Clip, color: Int, onSent: () -> Unit, onDismiss: () -> Unit)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
-                        if (folderName != null) listOf(folderName, s.clipFolder.trim('/')).filter { it.isNotBlank() }.joinToString(" / ") else "No vault folder picked",
+                        if (folderName != null) listOf(folderName, built.folder).filter { it.isNotBlank() }.joinToString(" / ") else "No vault folder picked",
                         style = MaterialTheme.typography.bodyLarge,
                     )
                     Text(
@@ -661,31 +666,46 @@ fun ClipSheet(clip: Clip, color: Int, onSent: () -> Unit, onDismiss: () -> Unit)
                 }, Modifier.height(52.dp), colors = ButtonDefaults.outlinedButtonColors(contentColor = scheme.onSurface)) { Text("Copy") }
                 Button(
                     onClick = {
-                        // A tag still being typed counts.
-                        val md = if (tagText.isNotBlank() && !append) VaultTemplates.mergeTags(markdown, listOf(tagText)) else markdown
-                        val note = built.copy(markdown = md)
+                        // A tag still being typed counts. A Markdown edit made by hand wins.
+                        val note = when {
+                            markdown != built.markdown -> built.copy(markdown = markdown, body = markdown)
+                            tagText.isNotBlank() -> TemplateNote.build(template, clip.copy(tags = tagList + tagText.trim().removePrefix("#"), links = linkList), s, answers.toMap())
+                            else -> built
+                        }
                         val r = if (s.vaultTree.isNotBlank()) Sender.saveFile(context, note, s.vaultTree) else Sender.viaLink(context, note, s.vaultName)
                         Toast.makeText(context, r.message, Toast.LENGTH_SHORT).show()
                         if (r.ok) onSent()
                     },
                     Modifier.weight(1f).height(52.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = scheme.onSurface, contentColor = scheme.surface),
-                ) { Text("Send", fontSize = 16.sp) }
+                ) { Text(if (adds) "Add" else "Send", fontSize = 16.sp) }
             }
         }
     }
     if (linking) LinkPicker(exclude = null, onPick = { if (it !in links) links += it; linking = false }, onDismiss = { linking = false })
-    templates?.let { list ->
+    choosing?.let { vault ->
+        // Your templates first, then notes from the vault's Templates folder not made into one yet.
+        val made = s.templates.map { it.source }.toSet()
         QuickSwitcher(
             "Template",
-            listOf(Choice("", "Built in", "The app's own note", "")) + list.map { Choice(it.uri, it.name, it.path.substringBeforeLast('/'), "Your vault") },
-            s.clipVaultTemplate,
+            s.templates.map { Choice("t:" + it.id, it.name, if (it.source.isNotBlank()) "From your vault" else "In the app", "Your templates") } +
+                vault.filter { it.path !in made }.map { Choice("v:" + it.uri, it.name, it.path.substringBeforeLast('/'), "Vault notes") },
+            "t:" + template.id,
             onPick = { c ->
-                app.settings.update { it.copy(clipVaultTemplate = c.id, clipVaultTemplateName = if (c.id.isBlank()) "" else c.title) }
-                templates = null
+                choosing = null
+                if (c.id.startsWith("t:")) {
+                    templateId = c.id.removePrefix("t:")
+                    app.settings.update { it.copy(selectedTemplateId = templateId) }
+                } else {
+                    val e = vault.first { it.uri == c.id.removePrefix("v:") }
+                    scope.launch {
+                        val id = withContext(Dispatchers.IO) { TemplateSync.use(app, e.uri, e.path) }
+                        if (id != null) templateId = id else Toast.makeText(context, "Could not read that note.", Toast.LENGTH_SHORT).show()
+                    }
+                }
             },
-            onDismiss = { templates = null },
-            hint = if (list.isEmpty()) "No Templates folder found in the vault" else "Find a template",
+            onDismiss = { choosing = null },
+            hint = "Find a template",
         )
     }
 }

@@ -21,7 +21,16 @@ data class Clip(
 )
 
 /** A finished note: its file name, folder, and Markdown. */
-data class BuiltNote(val name: String, val folder: String, val markdown: String, val append: Boolean)
+data class BuiltNote(
+    val name: String,
+    val folder: String,
+    val markdown: String,
+    val append: Boolean,
+    /** The part added to an existing note: the content without the properties. */
+    val body: String = markdown,
+    /** create | overwrite | append | prepend */
+    val mode: String = if (append) "append" else "create",
+)
 
 /**
  * Fills a template with a clip. Variables look like {{reference}}. Every note links back to its

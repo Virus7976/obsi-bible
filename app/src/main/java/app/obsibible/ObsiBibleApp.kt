@@ -64,6 +64,8 @@ class ObsiBibleApp : Application() {
             settings.state.map { app.obsibible.bible.Bibles.Keys(it.esvKey, it.apiBibleKey, it.youVersionKey, it.onlineBibles) }.distinctUntilChanged().collect { bibles.refreshOnline() }
         }
         keyScan = app.obsibible.bible.KeyScan(settings, appScope)
+        // Note templates as in ObsiTube: the built-in ones are added once, an old custom template is kept.
+        settings.update { app.obsibible.obsidian.TemplateNote.seeded(it) }
         vaultTags = app.obsibible.obsidian.VaultTags(this)
         // The vault's tags are read in the background, so tag suggestions include them.
         appScope.launch(Dispatchers.IO) { settings.state.map { it.vaultTree }.distinctUntilChanged().collect { vaultTags.refresh(it, force = true) } }
