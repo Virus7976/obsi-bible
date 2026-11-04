@@ -22,7 +22,12 @@ private fun JsonObject.str(k: String) = (this[k] as? JsonPrimitive)?.contentOrNu
 
 private fun get(url: String, header: Pair<String, String>): JsonObject {
     val req = Request.Builder().url(url).header(header.first, header.second).header("User-Agent", "ObsiBible").build()
-    http.newCall(req).execute().use { r ->
+    val call = try { http.newCall(req).execute() } catch (e: java.net.UnknownHostException) {
+        // API.Bible still answers on its older address. Some phone DNS blockers know only one of them.
+        if (url.startsWith(ApiBible.BASE)) return get(url.replace(ApiBible.BASE, ApiBible.OLD_BASE), header)
+        throw IOException("No internet, or a blocker on this phone stopped it. Check the connection and try again.")
+    }
+    call.use { r ->
         if (r.code == 401 || r.code == 403) throw IOException("The key was not accepted. Copy it again and paste it.")
         if (r.code == 429) throw IOException("Too many requests today. Try again later.")
         if (!r.isSuccessful) throw IOException("The Bible service answered ${r.code}.")
@@ -131,7 +136,8 @@ object EsvApi {
  */
 object ApiBible {
     const val PREFIX = "AB:"
-    private const val BASE = "https://rest.api.bible/v1"
+    const val BASE = "https://rest.api.bible/v1"
+    const val OLD_BASE = "https://api.scripture.api.bible/v1"
 
     private fun auth(key: String) = "api-key" to key.trim()
 

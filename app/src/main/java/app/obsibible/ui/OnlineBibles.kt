@@ -100,7 +100,7 @@ fun OnlineBibles(openSetup: () -> Unit) {
     Spacer(Modifier.height(8.dp))
     KeyField("API.Bible key", ab) { ab = it; app.settings.update { st -> st.copy(apiBibleKey = it) } }
     LinkRow("Get a free key at api.bible") { uri.openUri(SetupLinks.API_BIBLE_SIGNUP) }
-    keyStatus["API.Bible"]?.let { KeyStatus(it) }
+    keyStatus["API.Bible"]?.let { KeyStatus(it) { app.keyScan.rescan(scope, "API.Bible") } }
     if (ab.isNotBlank()) AddRow(if (finding == "API.Bible") "Looking…" else "Add a Bible from API.Bible") { find("API.Bible") { ApiBible.bibles(ab) } }
 
     Spacer(Modifier.height(18.dp))
@@ -109,7 +109,7 @@ fun OnlineBibles(openSetup: () -> Unit) {
     Spacer(Modifier.height(8.dp))
     KeyField("YouVersion app key", yv) { yv = it; app.settings.update { st -> st.copy(youVersionKey = it) } }
     LinkRow("Get a free key at platform.youversion.com") { uri.openUri(SetupLinks.YV_START) }
-    keyStatus["YouVersion"]?.let { KeyStatus(it) }
+    keyStatus["YouVersion"]?.let { KeyStatus(it) { app.keyScan.rescan(scope, "YouVersion") } }
     if (yv.isNotBlank()) AddRow(if (finding == "YouVersion") "Looking…" else "Add a Bible from YouVersion") { find("YouVersion") { YouVersion.bibles(yv) } }
 
     if (s.onlineBibles.isNotEmpty()) {
@@ -160,11 +160,12 @@ private fun KeyField(label: String, value: String, onChange: (String) -> Unit) {
 }
 
 @Composable
-private fun KeyStatus(text: String) {
+private fun KeyStatus(text: String, recheck: () -> Unit) {
     val bad = !text.startsWith("Your") && !text.startsWith("Checking")
     val good = text.contains("Message is added") || text.contains("It has The Message")
     Text(text, color = when { bad -> MaterialTheme.colorScheme.error; good -> MaterialTheme.colorScheme.onSurface; else -> MaterialTheme.colorScheme.onSurfaceVariant },
         modifier = Modifier.padding(vertical = 4.dp))
+    if (!text.startsWith("Checking")) androidx.compose.material3.TextButton(onClick = recheck) { Text("Check again") }
 }
 
 @Composable

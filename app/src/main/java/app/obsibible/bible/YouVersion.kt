@@ -22,7 +22,10 @@ object YouVersion {
 
     private fun call(url: String, key: String): String {
         val req = Request.Builder().url(url).header("X-YVP-App-Key", key.trim()).header("User-Agent", "ObsiBible").build()
-        http.newCall(req).execute().use { r ->
+        val call = try { http.newCall(req).execute() } catch (e: java.net.UnknownHostException) {
+            throw IOException("No internet, or a blocker on this phone stopped it. Check the connection and try again.")
+        }
+        call.use { r ->
             if (r.code == 401 || r.code == 403) throw IOException("The YouVersion key was not accepted. Copy it again and paste it.")
             if (r.code == 404) throw NotFound()
             if (r.code == 429) throw IOException("Too many requests today. Try again later.")
