@@ -43,6 +43,9 @@ class ObsiBibleApp : Application() {
     /** A highlight opened from the You tab. The reader opens it and clears it. */
     val openMark = MutableStateFlow<String?>(null)
 
+    /** True while the reader scrolls into the text. The tabs hide so the page is full screen. */
+    val reading = MutableStateFlow(false)
+
     override fun onCreate() {
         super.onCreate()
         settings = SettingsStore(this)
@@ -54,6 +57,8 @@ class ObsiBibleApp : Application() {
             settings.state.map { app.obsibible.bible.Bibles.Keys(it.esvKey, it.apiBibleKey, it.youVersionKey, it.onlineBibles) }.distinctUntilChanged().collect { bibles.refreshOnline() }
         }
         keyScan = app.obsibible.bible.KeyScan(settings, appScope)
+        // The 0.6 look has tighter lines. Move the old default once; a spacing the user chose stays.
+        if (!settings.value.lookV3) settings.update { it.copy(lookV3 = true, lineHeight = if (it.lineHeight in 1.55f..1.8f) 1.4f else it.lineHeight, readerFontSize = if (it.readerFontSize == 21f) 20f else it.readerFontSize) }
         audio = AudioEngine(this)
         marks = app.obsibible.data.MarksStore(this)
         UpdateNotice.schedule(this)

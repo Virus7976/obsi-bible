@@ -106,7 +106,7 @@ private fun variable(res: Int, weights: List<Int>, style: FontStyle = FontStyle.
 val SansFont = FontFamily(variable(R.font.figtree, listOf(400, 500, 600, 700)))
 
 /** The Bible text. */
-val SerifFont = FontFamily(variable(R.font.newsreader, listOf(400, 500, 600, 700)))
+val SerifFont = FontFamily(variable(R.font.literata, listOf(400, 500, 600, 700)))
 
 private fun TextStyle.sans() = copy(fontFamily = SansFont)
 

@@ -240,7 +240,7 @@ private fun Tabs(tab: Tab, onTab: (Tab) -> Unit, push: (Screen) -> Unit, openRef
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when (tab) {
                 Tab.Home -> HomeTab(openRef = openRef, openSearch = { onTab(Tab.Search) })
-                Tab.Bible -> BibleTab(openSearch = { push(Screen.Search) }, openVersions = { push(Screen.Versions) })
+                Tab.Bible -> BibleTab(openSearch = { push(Screen.Search) }, openVersions = { push(Screen.Versions) }, onBack = { onTab(Tab.Home) })
                 Tab.Search -> SearchScreen(onOpen = openRef, onBack = null, autofocus = false)
                 Tab.You -> YouTab(openSettings = { push(Screen.Settings) }, openRef = openRef)
                 Tab.Notes -> NotesTab(openRef = openRef)
@@ -249,7 +249,14 @@ private fun Tabs(tab: Tab, onTab: (Tab) -> Unit, push: (Screen) -> Unit, openRef
         // The keyboard covers the tabs anyway. Hiding them stops the space being counted twice.
         @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
         val typing = WindowInsets.isImeVisible
-        if (!typing) BottomTabs(tab, onTab)
+        val appRef = LocalApp.current
+        val reading by appRef.reading.collectAsState()
+        LaunchedEffect(tab) { if (tab != Tab.Bible) appRef.reading.value = false }
+        androidx.compose.animation.AnimatedVisibility(
+            visible = !typing && !(tab == Tab.Bible && reading),
+            enter = androidx.compose.animation.expandVertically(androidx.compose.animation.core.tween(220)),
+            exit = androidx.compose.animation.shrinkVertically(androidx.compose.animation.core.tween(220)),
+        ) { BottomTabs(tab, onTab) }
     }
 }
 

@@ -76,10 +76,12 @@ class PageView(context: Context) : NestedScrollView(context) {
     var away = false
         private set
     var onAway: (Boolean) -> Unit = {}
+    /** True while the reader scrolls down into the text, false when scrolling back up or at the top. */
+    var onReading: (Boolean) -> Unit = {}
     var onScrolled: () -> Unit = {}
 
-    private val serif: Typeface = ResourcesCompat.getFont(context, R.font.newsreader) ?: Typeface.SERIF
-    private val serifItalic: Typeface = ResourcesCompat.getFont(context, R.font.newsreader_italic) ?: Typeface.create(Typeface.SERIF, Typeface.ITALIC)
+    private val serif: Typeface = ResourcesCompat.getFont(context, R.font.literata) ?: Typeface.SERIF
+    private val serifItalic: Typeface = ResourcesCompat.getFont(context, R.font.literata_italic) ?: Typeface.create(Typeface.SERIF, Typeface.ITALIC)
 
     init {
         isFillViewport = true
@@ -621,6 +623,12 @@ class PageView(context: Context) : NestedScrollView(context) {
 
     override fun onScrollChanged(l: Int, t: Int, oldl: Int, oldt: Int) {
         super.onScrollChanged(l, t, oldl, oldt)
+        val touching = System.currentTimeMillis() - lastTouch < 1500
+        when {
+            t < 24 -> onReading(false)
+            touching && t - oldt > 6 -> onReading(true)
+            touching && oldt - t > 6 -> onReading(false)
+        }
         // Only a finger moves the page "away". The page's own follow scroll does not count.
         if (!away && follow != null && dragging == 0 && System.currentTimeMillis() - lastTouch < 1500 && t != oldt) {
             away = true
@@ -836,7 +844,7 @@ private class DropCap(private val number: String, face: Typeface, textPx: Float,
     private val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         this.color = capColor
         typeface = if (Build.VERSION.SDK_INT >= 28) Typeface.create(face, 400, false) else face
-        textSize = textPx * 3.1f
+        textSize = textPx * 3.3f
     }
     val width: Int = (paint.measureText(number) + textPx * 0.55f).roundToInt()
     private var drawn = -1

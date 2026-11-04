@@ -22,6 +22,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Pending
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.outlined.ContentCopy
@@ -73,7 +77,7 @@ import kotlinx.coroutines.withContext
 
 /** The Bible tab: the chapter, with listen, search, version and the chapter pill. */
 @Composable
-fun BibleTab(openSearch: () -> Unit, openVersions: () -> Unit) {
+fun BibleTab(openSearch: () -> Unit, openVersions: () -> Unit, onBack: () -> Unit = {}) {
     val app = LocalApp.current
     val s by app.settings.state.collectAsState()
     val audio by app.audio.ui.collectAsState()
@@ -135,18 +139,19 @@ fun BibleTab(openSearch: () -> Unit, openVersions: () -> Unit) {
 
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().statusBarsPadding().padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", Modifier.size(26.dp)) }
             Spacer(Modifier.weight(1f))
-            IconButton(onClick = { sheet = true }) { Icon(Icons.AutoMirrored.Rounded.VolumeUp, "Listen", Modifier.size(28.dp)) }
-            IconButton(onClick = openSearch) { Icon(Icons.Rounded.Search, "Search", Modifier.size(28.dp)) }
-            IconButton(onClick = { textSheet = true }) { Icon(Icons.Outlined.MoreHoriz, "Text size", Modifier.size(28.dp)) }
+            IconButton(onClick = { sheet = true }) { Icon(Icons.AutoMirrored.Outlined.VolumeUp, "Listen", Modifier.size(26.dp)) }
+            IconButton(onClick = openSearch) { Icon(Icons.Outlined.Search, "Search", Modifier.size(26.dp)) }
+            IconButton(onClick = { textSheet = true }) { Icon(Icons.Outlined.Pending, "Text size", Modifier.size(26.dp)) }
             Spacer(Modifier.width(6.dp))
             Row(
-                Modifier.clip(CircleShape).background(scheme.surfaceContainer).clickable(onClick = openVersions).padding(horizontal = 14.dp, vertical = 9.dp),
+                Modifier.clip(CircleShape).background(scheme.surfaceContainer).clickable(onClick = openVersions).padding(horizontal = 12.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.Outlined.Language, null, Modifier.size(20.dp))
-                Spacer(Modifier.width(6.dp))
-                Text(abbreviation, style = MaterialTheme.typography.titleMedium)
+                Icon(Icons.Outlined.Language, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(5.dp))
+                Text(abbreviation, style = MaterialTheme.typography.titleSmall, fontSize = 16.sp)
             }
         }
 
@@ -188,6 +193,7 @@ fun BibleTab(openSearch: () -> Unit, openVersions: () -> Unit) {
                             v.credit = credit.first
                             v.onCreditTap = { uri.openUri(credit.second) }
                             v.onAway = { away = it }
+                            v.onReading = { app.reading.value = it }
                             v.onMarkTap = { id -> selected = emptySet(); openMark = if (openMark == id) null else id }
                             v.onNoteIconTap = { id -> selected = emptySet(); openMark = id; noteFor = id }
                             v.onResize = { id, v1, c1, v2, c2 ->
@@ -199,7 +205,7 @@ fun BibleTab(openSearch: () -> Unit, openVersions: () -> Unit) {
                             // The key comes from the chapter itself, never from the pill: while the next
                             // chapter loads, the old text must not be filed under the new name.
                             val shown = Ref(ch.book, ch.number)
-                            v.show(ch, "${s.bible}/${shown.key}/${colors.text}/${s.readerFontSize}/$bibleVersion/${credit.first.hashCode()}", s.readerFontSize, s.lineHeight, colors, padH, with(density) { 40.dp.roundToPx() }, with(density) { 120.dp.roundToPx() })
+                            v.show(ch, "${s.bible}/${shown.key}/${colors.text}/${s.readerFontSize}/$bibleVersion/${credit.first.hashCode()}", s.readerFontSize, s.lineHeight, colors, padH, with(density) { 64.dp.roundToPx() }, with(density) { 120.dp.roundToPx() })
                             v.setSelected(selected)
                             v.setMarks(chapterMarks, openMark)
                             val following = audio.active && audio.bible == s.bible && audio.ref == shown
@@ -367,7 +373,7 @@ fun BibleTab(openSearch: () -> Unit, openVersions: () -> Unit) {
             onSave = { text, tags ->
                 val now = app.marks.get(id)
                 if (now != null) {
-                    if (text.isBlank() && !now.hasColor) { app.marks.remove(id); if (openMark == id) openMark = null }
+                    if (text.isBlank() && tags.isEmpty() && !now.hasColor) { app.marks.remove(id); if (openMark == id) openMark = null }
                     else if (text != now.note || tags != now.tags) app.marks.put(now.copy(note = text, tags = tags, updated = System.currentTimeMillis()))
                 }
             },
@@ -440,7 +446,7 @@ fun TextSizeSheet(onDismiss: () -> Unit) {
             }
             Spacer(Modifier.height(8.dp))
             Text("Line spacing", style = MaterialTheme.typography.titleMedium)
-            Slider(s.lineHeight, { v -> app.settings.update { it.copy(lineHeight = v) } }, valueRange = 1.3f..2.2f,
+            Slider(s.lineHeight, { v -> app.settings.update { it.copy(lineHeight = v) } }, valueRange = 1.1f..2.0f,
                 colors = SliderDefaults.colors(thumbColor = scheme.onSurface, activeTrackColor = scheme.onSurface, inactiveTrackColor = scheme.surfaceContainerHighest))
         }
     }

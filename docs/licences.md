@@ -24,3 +24,5 @@ Rows are added as each source ships.
 - API.Bible (rest.api.bible): free Starter plan, non-commercial, up to 3 licensed Bibles. Must show a visible link to https://api.bible. Cached text must be refreshed at least every 30 days. Text-to-audio of a licensed text may be a derivative work, so the app never reads these Bibles with a computer voice.
 - YouVersion Platform (api.youversion.com): user's own app key, header X-YVP-App-Key. Non-commercial. The app shows each Bible's copyright and names YouVersion. Same 500-verse cache cap and no computer voice, to stay safe.
 
+
+| Literata font (reader text) | SIL Open Font License 1.1 | docs/Literata-OFL.txt |

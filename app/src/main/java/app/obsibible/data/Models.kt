@@ -10,8 +10,10 @@ import kotlinx.serialization.Serializable
 data class AppSettings(
     // look
     val appearance: String = "dark", // auto | light | dark | oled
-    val readerFontSize: Float = 21f,
-    val lineHeight: Float = 1.75f,
+    val readerFontSize: Float = 20f,
+    val lineHeight: Float = 1.4f,
+    /** Set once the 0.6 reader look moved old line spacing to the new default. */
+    val lookV3: Boolean = false,
     // reading
     val bible: String = "BSB",
     val lastRef: String = "JHN.1",

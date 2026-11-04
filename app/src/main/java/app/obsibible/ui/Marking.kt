@@ -1,5 +1,6 @@
 package app.obsibible.ui
 
+import androidx.compose.foundation.layout.widthIn
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
@@ -240,66 +241,87 @@ fun NoteSheet(mark: Mark, onSave: (note: String, tags: List<String>) -> Unit, on
         val clean = t.trim().removePrefix("#").replace(' ', '-')
         if (clean.isNotEmpty() && clean !in tags) tags += clean
     }
-    fun save() { addTag(tagText); onSave(note.trim(), tags.toList()) }
-    ModalBottomSheet(onDismissRequest = { save(); onDismiss() }, sheetState = state, containerColor = scheme.surfaceContainer, contentColor = scheme.onSurface, dragHandle = { SheetHandle() }) {
-        Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = 22.dp).padding(bottom = 18.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+    fun save() { addTag(tagText); tagText = ""; onSave(note.trim(), tags.toList()) }
+    // Saves while you type, so a stray swipe or a closed app never loses a word.
+    LaunchedEffect(mark.id) {
+        // An empty note is never saved here: saving it empty would delete it while it is still open.
+        androidx.compose.runtime.snapshotFlow { field.text to tags.toList() }
+            .collect { (t, tg) -> kotlinx.coroutines.delay(400); if (t.isNotBlank() || tg.isNotEmpty()) onSave(t.trim(), tg) }
+    }
+    // A swipe down does not close it: only Done, Back, or a tap above it. Each of those saves first.
+    ModalBottomSheet(
+        onDismissRequest = { save(); onDismiss() }, sheetState = state, sheetGesturesEnabled = false,
+        containerColor = scheme.surfaceContainer, contentColor = scheme.onSurface, dragHandle = { SheetHandle() },
+    ) {
+        Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding()) {
+            Row(Modifier.padding(horizontal = 22.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(mark.label, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
                 Button(onClick = { save(); onDismiss() }, colors = ButtonDefaults.buttonColors(containerColor = scheme.onSurface, contentColor = scheme.surface)) { Text("Done") }
             }
-            Spacer(Modifier.height(14.dp))
-            QuoteCard(mark.quote, mark.color, maxLines = 4)
-            Spacer(Modifier.height(14.dp))
-            TextField(
-                field, { v ->
-                    val typedLink = v.text.length == field.text.length + 1 && v.selection.min >= 2 && v.text.substring(v.selection.min - 2, v.selection.min) == "[["
-                    field = v
-                    if (typedLink) linking = true
-                },
-                Modifier.fillMaxWidth().heightIn(min = 140.dp).focusRequester(focus),
-                placeholder = { Text("Write a note") },
-                textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 18.sp, lineHeight = 27.sp),
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = scheme.surfaceContainerHighest, unfocusedContainerColor = scheme.surfaceContainerHighest,
-                    focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
-                ),
-                shape = RoundedCornerShape(16.dp),
-            )
-            Spacer(Modifier.height(10.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Row(
-                    Modifier.clip(CircleShape).background(scheme.surfaceContainerHighest).clickable { linking = true }.padding(horizontal = 14.dp, vertical = 9.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(Icons.Rounded.Link, null, Modifier.size(20.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Link", fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(12.dp))
+            Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 22.dp).padding(bottom = 18.dp)) {
+                QuoteCard(mark.quote, mark.color, maxLines = 3)
+                Spacer(Modifier.height(14.dp))
+                TextField(
+                    field, { v ->
+                        val typedLink = v.text.length == field.text.length + 1 && v.selection.min >= 2 && v.text.substring(v.selection.min - 2, v.selection.min) == "[["
+                        field = v
+                        if (typedLink) linking = true
+                    },
+                    Modifier.fillMaxWidth().heightIn(min = 110.dp).focusRequester(focus),
+                    placeholder = { Text("Write a note") },
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 18.sp, lineHeight = 27.sp),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = scheme.surfaceContainerHighest, unfocusedContainerColor = scheme.surfaceContainerHighest,
+                        focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
+                    ),
+                    shape = RoundedCornerShape(16.dp),
+                )
+                val links = remember(note) { NoteLinks.find(note) }
+                if (links.isNotEmpty()) {
+                    Spacer(Modifier.height(10.dp))
+                    LinkChips(links)
                 }
-                Spacer(Modifier.width(10.dp))
-                Text("Or type [[ in the note.", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+                Spacer(Modifier.height(16.dp))
+                Text("Tags", style = MaterialTheme.typography.titleSmall, color = scheme.onSurfaceVariant)
+                Spacer(Modifier.height(8.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    tags.forEach { t -> TagChip("#$t", on = true) { tags.remove(t) } }
+                    // The tag box sits in the row, like one more chip.
+                    androidx.compose.foundation.text.BasicTextField(
+                        tagText, { v -> if (v.endsWith(' ') || v.endsWith(',')) { addTag(v.dropLast(1)); tagText = "" } else tagText = v },
+                        Modifier.clip(CircleShape).background(scheme.surfaceContainerHighest).padding(horizontal = 14.dp, vertical = 9.dp).widthIn(min = 90.dp),
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodyMedium.copy(color = scheme.onSurface, fontSize = 15.sp),
+                        cursorBrush = androidx.compose.ui.graphics.SolidColor(scheme.onSurface),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { addTag(tagText); tagText = "" }),
+                        decorationBox = { inner -> Box { if (tagText.isEmpty()) Text("+ Add tag", color = scheme.onSurfaceVariant, fontSize = 15.sp); inner() } },
+                    )
+                }
+                val suggest = known.filter { it !in tags && (tagText.isBlank() || it.contains(tagText.trim().removePrefix("#"), true)) }.take(8)
+                if (suggest.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        suggest.forEach { t -> TagChip("#$t", on = false) { tags += t; tagText = "" } }
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                Text("Links", style = MaterialTheme.typography.titleSmall, color = scheme.onSurfaceVariant)
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        Modifier.clip(CircleShape).background(scheme.surfaceContainerHighest).clickable { linking = true }.padding(horizontal = 14.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Rounded.Link, null, Modifier.size(20.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Add link", fontWeight = FontWeight.SemiBold)
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Text("Or type [[ in the note.", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+                }
             }
-            val links = remember(note) { NoteLinks.find(note) }
-            if (links.isNotEmpty()) {
-                Spacer(Modifier.height(10.dp))
-                LinkChips(links)
-            }
-            Spacer(Modifier.height(14.dp))
-            Text("Tags", style = MaterialTheme.typography.titleSmall, color = scheme.onSurfaceVariant)
-            Spacer(Modifier.height(8.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                tags.forEach { t -> TagChip("#$t", on = true) { tags.remove(t) } }
-                known.filter { it !in tags }.take(8).forEach { t -> TagChip("#$t", on = false) { tags += t } }
-            }
-            Spacer(Modifier.height(8.dp))
-            TextField(
-                tagText, { v -> if (v.endsWith(' ') || v.endsWith(',')) { addTag(v.dropLast(1)); tagText = "" } else tagText = v },
-                Modifier.fillMaxWidth(), singleLine = true, placeholder = { Text("Add a tag") },
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { addTag(tagText); tagText = "" }),
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
-                ),
-            )
         }
     }
     LaunchedEffect(Unit) { if (mark.note.isBlank()) runCatching { focus.requestFocus() } }
