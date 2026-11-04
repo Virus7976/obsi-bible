@@ -84,7 +84,7 @@ fun SettingsScreen(onBack: () -> Unit, openSetup: () -> Unit = {}) {
                 AppIconPicker()
             }
             }
-            if (show("Listening audio voice speech narrator next chapter Microsoft Azure key region phone voice")) { any = true
+            if (show("Listening audio voice speech narrator next chapter pause note follow scroll sync back Microsoft Azure key region phone voice")) { any = true
             Group("Listening") {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -94,6 +94,8 @@ fun SettingsScreen(onBack: () -> Unit, openSetup: () -> Unit = {}) {
                     OutlinedButton(onClick = { voices = true }) { Text("Change") }
                 }
                 Toggle("Keep going to the next chapter", s.autoContinue) { v -> set { it.copy(autoContinue = v) } }
+                Toggle("Pause while you write a note", s.pauseWhileNoting) { v -> set { it.copy(pauseWhileNoting = v) } }
+                Toggle("Scroll with the audio", s.followAudio) { v -> set { it.copy(followAudio = v) } }
                 Text("Microsoft voices", style = MaterialTheme.typography.titleSmall)
                 Text(
                     "Natural voices from Microsoft Azure Speech. Make a free Speech resource at portal.azure.com, then paste its key and region here. The key stays on this phone.",

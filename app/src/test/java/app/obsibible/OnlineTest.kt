@@ -125,4 +125,16 @@ class OnlineTest {
         assertTrue(placed.markdown.contains("Links: [[Grace]]"))
         assertFalse(placed.markdown.trimEnd().endsWith("world\n[[Grace]]"))
     }
+
+    @Test fun messageIsFoundAndSummed() {
+        val f = app.obsibible.bible.MessageFinder
+        val msg = app.obsibible.bible.RemoteBible("65", "MSG", "The Message", "English")
+        val kjv = app.obsibible.bible.RemoteBible("de4e", "KJV", "King James Version", "English")
+        assertTrue(f.isMessage(msg))
+        assertTrue(f.isMessage(msg.copy(abbreviation = "", name = "The Message Bible")))
+        assertFalse(f.isMessage(kjv))
+        assertEquals("Your API.Bible key works. The Message is added to your Bibles.", f.summary("API.Bible", listOf(kjv, msg), true))
+        assertEquals("Your API.Bible key works, but The Message is not on it. It has: KJV.", f.summary("API.Bible", listOf(kjv), false))
+        assertTrue(f.summary("YouVersion", emptyList(), false).contains("no Bibles yet"))
+    }
 }

@@ -20,6 +20,8 @@ data class AppSettings(
     val audioSource: String = "narrator:souer",
     val audioSpeed: Float = 1f,
     val autoContinue: Boolean = true,
+    val pauseWhileNoting: Boolean = true,
+    val followAudio: Boolean = true,
     val phoneVoice: String = "",
     // Microsoft (Azure Speech) voices, with the user's own key
     val cloudKey: String = "",

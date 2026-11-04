@@ -92,7 +92,7 @@ fun addOnlineBible(app: ObsiBibleApp, id: String, abbreviation: String, name: St
     app.settings.update { s -> s.copy(onlineBibles = s.onlineBibles.filterNot { it.substringBefore('|') == id } + entry, bible = bibleId) }
 }
 
-private fun isMessage(b: RemoteBible) = b.abbreviation.equals("MSG", true) || b.name.contains("The Message", true)
+private fun isMessage(b: RemoteBible) = app.obsibible.bible.MessageFinder.isMessage(b)
 
 /**
  * The setup guide. It opens once on first start, and again from Settings or Versions.

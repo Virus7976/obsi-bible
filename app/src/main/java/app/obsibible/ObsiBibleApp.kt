@@ -29,6 +29,8 @@ class ObsiBibleApp : Application() {
         private set
     lateinit var marks: app.obsibible.data.MarksStore
         private set
+    lateinit var keyScan: app.obsibible.bible.KeyScan
+        private set
 
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -51,6 +53,7 @@ class ObsiBibleApp : Application() {
         appScope.launch {
             settings.state.map { app.obsibible.bible.Bibles.Keys(it.esvKey, it.apiBibleKey, it.youVersionKey, it.onlineBibles) }.distinctUntilChanged().collect { bibles.refreshOnline() }
         }
+        keyScan = app.obsibible.bible.KeyScan(settings, appScope)
         audio = AudioEngine(this)
         marks = app.obsibible.data.MarksStore(this)
         UpdateNotice.schedule(this)

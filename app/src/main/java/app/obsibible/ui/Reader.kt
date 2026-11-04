@@ -29,6 +29,7 @@ import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Search
@@ -96,6 +97,19 @@ fun BibleTab(openSearch: () -> Unit, openVersions: () -> Unit) {
     var noteFor by remember { mutableStateOf<String?>(null) }
     var clipping by remember { mutableStateOf<Pair<Clip, Int>?>(null) }
     var clipMark by remember { mutableStateOf<String?>(null) }
+    // Scrolled away from the verse being read: offer a button to go back to it.
+    var away by remember { mutableStateOf(false) }
+    // Playback waits while a note or the Obsidian sheet is open, then goes on by itself.
+    var pausedForNote by remember { mutableStateOf(false) }
+    val writing = noteFor != null || clipping != null
+    LaunchedEffect(writing) {
+        if (writing) {
+            if (s.pauseWhileNoting && app.audio.ui.value.playing) { app.audio.pause(); pausedForNote = true }
+        } else if (pausedForNote) {
+            pausedForNote = false
+            app.audio.toggle()
+        }
+    }
     val open = chapterMarks.firstOrNull { it.id == openMark }
     val pendingMark by app.openMark.collectAsState()
     LaunchedEffect(pendingMark, chapterMarks) {
@@ -148,6 +162,20 @@ fun BibleTab(openSearch: () -> Unit, openVersions: () -> Unit) {
                         underline = scheme.onSurfaceVariant.toArgb(),
                     )
                     val padH = with(density) { 28.dp.roundToPx() }
+                    // Online Bibles must show their copyright. It sits small at the end of the chapter.
+                    // The ESV links to esv.org as Crossway asks; API.Bible's free plan asks for a link to api.bible.
+                    val uri = androidx.compose.ui.platform.LocalUriHandler.current
+                    val credit = remember(s.bible) {
+                        val service = app.bibles.serviceOf(s.bible)
+                        val info = app.bibles.installed.value.firstOrNull { it.id == s.bible }
+                        val cr = info?.copyright.orEmpty().lineSequence().firstOrNull().orEmpty().take(120)
+                        when (service) {
+                            "Crossway" -> "Scripture quotations are from the ESV® Bible, © 2001 by Crossway. esv.org" to "https://www.esv.org"
+                            "API.Bible" -> listOf(cr, "via api.bible").filter { it.isNotBlank() }.joinToString(" · ") to "https://api.bible"
+                            "YouVersion" -> listOf(cr, "via YouVersion").filter { it.isNotBlank() }.joinToString(" · ") to "https://www.bible.com"
+                            else -> "" to ""
+                        }
+                    }
                     AndroidView(
                         factory = { ctx -> PageView(ctx).also { page = it } },
                         modifier = Modifier.fillMaxSize().clipToBounds(),
@@ -157,6 +185,9 @@ fun BibleTab(openSearch: () -> Unit, openVersions: () -> Unit) {
                                 else selected = if (verse in selected) selected - verse else selected + verse
                             }
                             v.onNoteTap = { note = it }
+                            v.credit = credit.first
+                            v.onCreditTap = { uri.openUri(credit.second) }
+                            v.onAway = { away = it }
                             v.onMarkTap = { id -> selected = emptySet(); openMark = if (openMark == id) null else id }
                             v.onNoteIconTap = { id -> selected = emptySet(); openMark = id; noteFor = id }
                             v.onResize = { id, v1, c1, v2, c2 ->
@@ -168,11 +199,11 @@ fun BibleTab(openSearch: () -> Unit, openVersions: () -> Unit) {
                             // The key comes from the chapter itself, never from the pill: while the next
                             // chapter loads, the old text must not be filed under the new name.
                             val shown = Ref(ch.book, ch.number)
-                            v.show(ch, "${s.bible}/${shown.key}/${colors.text}/${s.readerFontSize}/$bibleVersion", s.readerFontSize, s.lineHeight, colors, padH, with(density) { 40.dp.roundToPx() }, with(density) { 120.dp.roundToPx() })
+                            v.show(ch, "${s.bible}/${shown.key}/${colors.text}/${s.readerFontSize}/$bibleVersion/${credit.first.hashCode()}", s.readerFontSize, s.lineHeight, colors, padH, with(density) { 40.dp.roundToPx() }, with(density) { 120.dp.roundToPx() })
                             v.setSelected(selected)
                             v.setMarks(chapterMarks, openMark)
                             val following = audio.active && audio.bible == s.bible && audio.ref == shown
-                            v.setFollow(if (following) audio.verse else 0, if (following) audio.word else null, following && audio.playing)
+                            v.setFollow(if (following) audio.verse else 0, if (following) audio.word else null, following && audio.playing && s.followAudio)
                         },
                     )
                     LaunchedEffect(ch, focusVerse) { if (focusVerse > 0) page?.scrollToVerse(focusVerse, false) }
@@ -201,26 +232,33 @@ fun BibleTab(openSearch: () -> Unit, openVersions: () -> Unit) {
                 }
                 else -> Text("${ref.label} is not in this Bible.", Modifier.padding(32.dp).align(Alignment.Center), color = scheme.onSurfaceVariant)
             }
-        }
-        // Online Bibles must show their copyright. The ESV links to esv.org as Crossway asks.
-        if (chapter != null && app.bibles.isOnline(s.bible)) {
-            val info = app.bibles.installed.value.firstOrNull { it.id == s.bible }
-            val uri = androidx.compose.ui.platform.LocalUriHandler.current
-            // API.Bible's free plan asks for a visible link to api.bible. YouVersion is named too.
-            val service = app.bibles.serviceOf(s.bible)
-            val cr = info?.copyright.orEmpty().lineSequence().firstOrNull().orEmpty().take(70)
-            val line = when (service) {
-                "Crossway" -> "ESV® Bible · © 2001 Crossway · esv.org"
-                "API.Bible" -> listOf(cr, "via api.bible").filter { it.isNotBlank() }.joinToString(" · ")
-                else -> listOf(cr, "via YouVersion").filter { it.isNotBlank() }.joinToString(" · ")
+            // Shows only while the verse being read is out of sight.
+            val followingHere = audio.active && audio.bible == s.bible && audio.ref == ref.chapterRef && s.followAudio
+            var verseOffScreen by remember { mutableStateOf(false) }
+            LaunchedEffect(away, followingHere) {
+                while (away && followingHere) {
+                    verseOffScreen = page?.followVisible()?.not() ?: false
+                    kotlinx.coroutines.delay(250)
+                }
+                verseOffScreen = false
             }
-            val link = when (service) { "Crossway" -> "https://www.esv.org"; "API.Bible" -> "https://api.bible"; else -> "https://www.bible.com" }
-            Text(
-                line, color = scheme.onSurfaceVariant, fontSize = 12.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                modifier = Modifier.fillMaxWidth().clickable { uri.openUri(link) }.padding(horizontal = 20.dp, vertical = 6.dp),
-            )
+            androidx.compose.animation.AnimatedVisibility(
+                visible = away && followingHere && verseOffScreen,
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp),
+                enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(initialScale = 0.85f),
+                exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut(targetScale = 0.85f),
+            ) {
+                Row(
+                    Modifier.clip(CircleShape).background(scheme.inverseSurface).clickable { page?.resync(); away = false }
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(androidx.compose.material.icons.Icons.Rounded.MyLocation, null, Modifier.size(20.dp), tint = scheme.inverseOnSurface)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Back to verse ${audio.verse}", color = scheme.inverseOnSurface, style = MaterialTheme.typography.titleSmall)
+                }
+            }
         }
-
         HorizontalDivider(color = scheme.outlineVariant)
         if (open != null) {
             val m = open

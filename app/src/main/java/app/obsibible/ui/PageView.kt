@@ -69,6 +69,13 @@ class PageView(context: Context) : NestedScrollView(context) {
 
     var onVerseTap: (Int) -> Unit = {}
     var onNoteTap: (String) -> Unit = {}
+    /** The copyright line shown small at the end of the chapter. Set it before show(). */
+    var credit: String = ""
+    var onCreditTap: () -> Unit = {}
+    /** True when the reader scrolled away from the verse being read. The page stops following until resync(). */
+    var away = false
+        private set
+    var onAway: (Boolean) -> Unit = {}
     var onScrolled: () -> Unit = {}
 
     private val serif: Typeface = ResourcesCompat.getFont(context, R.font.newsreader) ?: Typeface.SERIF
@@ -107,6 +114,7 @@ class PageView(context: Context) : NestedScrollView(context) {
         verseStarts = built.starts
         verseEnds = built.ends
         follow = null; word = null; selected.clear(); followKey = null
+        if (away) { away = false; onAway(false) }
         plain = chapter.verses().toMap()
         maps.clear(); markSpans.clear(); marksKey = null
         text.setPins(-1, -1, 0); text.notes = emptyList()
@@ -121,7 +129,8 @@ class PageView(context: Context) : NestedScrollView(context) {
         val starts = ArrayList<Pair<Int, Int>>()
         val ends = HashMap<Int, Int>()
         var verse = 0
-        val indent = (px * 1.6f).roundToInt()
+        // Narrow indents: a phone line is short, and wide ones push single words onto lines of their own.
+        val indent = (px * 0.9f).roundToInt()
         var firstBody = true
         var dropCapPending: DropCap? = null
         var dropCapSecond = false
@@ -233,7 +242,7 @@ class PageView(context: Context) : NestedScrollView(context) {
                     dropCapSecond = false
                 }
                 val margin: LeadingMarginSpan? = when (b.kind) {
-                    "q1" -> LeadingMarginSpan.Standard(0, indent)
+                    "q1" -> LeadingMarginSpan.Standard(0, indent * 2)
                     "q2" -> LeadingMarginSpan.Standard(indent, indent * 2)
                     "li1" -> LeadingMarginSpan.Standard(indent / 2, indent)
                     "li2" -> LeadingMarginSpan.Standard(indent, indent * 3 / 2)
@@ -249,6 +258,14 @@ class PageView(context: Context) : NestedScrollView(context) {
             lastKind = b.kind
         }
         closeVerse()
+        if (credit.isNotBlank()) {
+            sb.append("\n\n")
+            val s = sb.length
+            sb.append(credit)
+            sb.setSpan(RelativeSizeSpan(0.6f), s, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            sb.setSpan(ForegroundColorSpan(colors.muted), s, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            sb.setSpan(CreditSpan(), s, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
         return Built(sb, starts, ends)
     }
 
@@ -283,7 +300,7 @@ class PageView(context: Context) : NestedScrollView(context) {
             if (ws != null) word = MarkSpan(text, ws.first, ws.last + 1, colors.markStrong, MarkSpan.FILL).also { sp.setSpan(it, ws.first, ws.last + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE) }
         }
         text.invalidate()
-        if (scroll && !recentlyTouched) keepInView(word?.let { it.start } ?: r.first)
+        if (scroll && !away && !recentlyTouched) keepInView(word?.let { it.start } ?: r.first)
     }
 
     /**
@@ -602,6 +619,35 @@ class PageView(context: Context) : NestedScrollView(context) {
         onResize(id, a.first, a.second, b.first, b.second)
     }
 
+    override fun onScrollChanged(l: Int, t: Int, oldl: Int, oldt: Int) {
+        super.onScrollChanged(l, t, oldl, oldt)
+        // Only a finger moves the page "away". The page's own follow scroll does not count.
+        if (!away && follow != null && dragging == 0 && System.currentTimeMillis() - lastTouch < 1500 && t != oldt) {
+            away = true
+            onAway(true)
+        }
+    }
+
+    /** True when the verse being read is on the screen. */
+    fun followVisible(): Boolean {
+        val f = follow ?: return true
+        val layout = text.layout ?: return true
+        val line = layout.getLineForOffset(word?.start ?: f.start)
+        val top = text.top + text.paddingTop + layout.getLineTop(line)
+        val bottom = text.top + text.paddingTop + layout.getLineBottom(line)
+        return bottom > scrollY && top < scrollY + height
+    }
+
+    /** Goes back to the verse being read, and follows it again. */
+    fun resync() {
+        away = false
+        onAway(false)
+        val f = follow ?: return
+        val layout = text.layout ?: return
+        val top = text.paddingTop + layout.getLineTop(layout.getLineForOffset(word?.start ?: f.start))
+        smoothScrollTo(0, (top - height / 4).coerceAtLeast(0))
+    }
+
     /** Scrolls so [verse] sits a third of the way down. */
     fun scrollToVerse(verse: Int, smooth: Boolean) {
         val s = verseStarts.firstOrNull { it.first == verse }?.second ?: return
@@ -639,6 +685,7 @@ class PageView(context: Context) : NestedScrollView(context) {
         val sp = text.text as? Spanned ?: return
         text.noteAt(x, y)?.let { onNoteIconTap(it); return }
         sp.getSpans((off - 1).coerceAtLeast(0), off + 1, NoteSpan::class.java).firstOrNull()?.let { onNoteTap(it.note); return }
+        if (sp.getSpans(off, off, CreditSpan::class.java).isNotEmpty()) { onCreditTap(); return }
         if (x >= text.paddingLeft && x <= text.width - text.paddingRight) {
             val hit = marks.filter { it.hasColor || it.id == openId }.sortedByDescending { it.created }
                 .firstOrNull { m -> pageRange(m)?.let { off in it } == true }
@@ -780,6 +827,9 @@ private class TypefaceSpan2(private val face: Typeface, private val weight: Int)
 
 /** A footnote. The page shows a small letter; tapping it shows the note. */
 class NoteSpan(val note: String)
+
+/** Marks the copyright line, so a tap on it opens the source's site. */
+class CreditSpan
 
 /** The big grey chapter number that the first two lines flow around. */
 private class DropCap(private val number: String, face: Typeface, textPx: Float, capColor: Int) : LeadingMarginSpan.LeadingMarginSpan2 {

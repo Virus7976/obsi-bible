@@ -22,6 +22,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -244,7 +246,10 @@ private fun Tabs(tab: Tab, onTab: (Tab) -> Unit, push: (Screen) -> Unit, openRef
                 Tab.Notes -> NotesTab(openRef = openRef)
             }
         }
-        BottomTabs(tab, onTab)
+        // The keyboard covers the tabs anyway. Hiding them stops the space being counted twice.
+        @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+        val typing = WindowInsets.isImeVisible
+        if (!typing) BottomTabs(tab, onTab)
     }
 }
 
