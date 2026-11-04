@@ -1,5 +1,8 @@
 package app.obsibible.ui
 
+import app.obsibible.obsidian.Sender
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.combinedClickable
 import android.content.Intent
 import android.text.format.DateUtils
 import androidx.compose.foundation.background
@@ -254,6 +257,13 @@ fun NotesTab(openRef: (Ref) -> Unit) {
     var sort by remember { mutableStateOf(NoteSort.Book) }
     var tag by remember { mutableStateOf<String?>(null) }
     val scheme = MaterialTheme.colorScheme
+    val settings by app.settings.state.collectAsState()
+    val synced by app.highlightsSynced.collectAsState()
+    val syncError by app.highlightsError.collectAsState()
+    var menuFor by remember { mutableStateOf<Mark?>(null) }
+    var noteFor by remember { mutableStateOf<String?>(null) }
+    var clipping by remember { mutableStateOf<Pair<Mark, Clip>?>(null) }
+    val context = androidx.compose.ui.platform.LocalContext.current
     val tags = remember(marks) { marks.flatMap { it.tags }.groupingBy { it }.eachCount().entries.sortedByDescending { it.value } }
     val shown = remember(marks, tag) { marks.filter { (it.hasColor || it.hasNote) && (tag == null || tag in it.tags) } }
     val groups: List<Pair<String, List<Mark>>> = remember(shown, sort) {
@@ -274,6 +284,15 @@ fun NotesTab(openRef: (Ref) -> Unit) {
             if (tags.isNotEmpty()) Box(Modifier.padding(horizontal = 4.dp).width(1.dp).height(36.dp).background(scheme.outlineVariant))
             tags.forEach { (t, n) -> SmallChip("#$t $n", t == tag) { tag = if (tag == t) null else t } }
         }
+        // Where the highlights go in Obsidian, in one line.
+        val where = when {
+            settings.vaultTree.isBlank() -> "Pick your vault in Settings, and every highlight is saved to Obsidian."
+            !settings.highlightsFile -> "Highlights are not saved to a file. Turn it on in Settings, Obsidian."
+            syncError != null -> syncError!!
+            else -> "Every highlight is saved to ${settings.highlightsFolder}, one file per book."
+        }
+        Text(where, color = if (syncError != null) scheme.error else scheme.onSurfaceVariant, fontSize = 14.sp,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 2.dp))
         if (shown.isEmpty()) {
             Column(Modifier.fillMaxWidth().padding(32.dp)) {
                 Text("No notes yet.", style = MaterialTheme.typography.titleMedium)
@@ -291,11 +310,48 @@ fun NotesTab(openRef: (Ref) -> Unit) {
                     }
                     items(list, key = { it.id }) { m ->
                         val abbr = installed.firstOrNull { it.id == m.bible }?.abbreviation ?: m.bible
-                        NoteRow(m, abbr) { app.openMark.value = m.id; openRef(m.ref) }
+                        val inFile = settings.highlightsFile && settings.vaultTree.isNotBlank() && syncError == null && synced >= m.updated
+                        NoteRow(m, abbr, inFile, onClick = { app.openMark.value = m.id; openRef(m.ref) }, onLongClick = { menuFor = m })
                     }
                 }
             }
         }
+    }
+    menuFor?.let { m ->
+        val abbr = installed.firstOrNull { it.id == m.bible }?.abbreviation ?: m.bible
+        val text = "\u201C" + m.quote.trim() + "\u201D \u2014 " + m.label + " " + abbr + (if (m.hasNote) "\n\n" + m.note.trim() else "")
+        MarkActionsSheet(
+            m, abbr,
+            onOpen = { menuFor = null; app.openMark.value = m.id; openRef(m.ref) },
+            onNote = { menuFor = null; noteFor = m.id },
+            onOwnNote = { menuFor = null; clipping = m to clipFor(app, m) },
+            onCopy = { menuFor = null; Sender.copy(context, text); android.widget.Toast.makeText(context, "Copied.", android.widget.Toast.LENGTH_SHORT).show() },
+            onShare = {
+                menuFor = null
+                context.startActivity(android.content.Intent.createChooser(android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain").putExtra(android.content.Intent.EXTRA_TEXT, text), null))
+            },
+            onDelete = { menuFor = null; app.marks.remove(m.id) },
+            onDismiss = { menuFor = null },
+        )
+    }
+    noteFor?.let { id ->
+        val m = marks.firstOrNull { it.id == id }
+        if (m == null) noteFor = null else NoteSheet(
+            m,
+            onSave = { text, tg ->
+                app.marks.get(id)?.let { now ->
+                    if (text.isBlank() && tg.isEmpty() && !now.hasColor) app.marks.remove(id)
+                    else if (text != now.note || tg != now.tags) app.marks.put(now.copy(note = text, tags = tg, updated = System.currentTimeMillis()))
+                }
+            },
+            onDismiss = { noteFor = null },
+        )
+    }
+    clipping?.let { (m, clip) ->
+        ClipSheet(clip, m.color, onSent = {
+            app.marks.get(m.id)?.let { app.marks.put(it.copy(clipped = System.currentTimeMillis())) }
+            clipping = null
+        }, onDismiss = { clipping = null })
     }
 }
 
@@ -311,20 +367,68 @@ private fun SmallChip(label: String, on: Boolean, onClick: () -> Unit) {
 
 /** One note in the library: colour bar, reference, the words, and the note. */
 @Composable
-private fun NoteRow(m: Mark, abbr: String, onClick: () -> Unit) {
+private fun NoteRow(m: Mark, abbr: String, inFile: Boolean, onClick: () -> Unit, onLongClick: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     val bar = if (m.hasColor) Color(HighlightColors[m.color.coerceIn(HighlightColors.indices)].ui) else scheme.onSurfaceVariant
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 10.dp).height(IntrinsicSize.Min)) {
+    Row(Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick).padding(horizontal = 20.dp, vertical = 10.dp).height(IntrinsicSize.Min)) {
         Box(Modifier.width(4.dp).fillMaxHeight().clip(RoundedCornerShape(2.dp)).background(bar))
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("${m.label} $abbr", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                if (m.clipped > 0) Icon(BarIcons.obsidian, "In Obsidian", Modifier.size(14.dp), tint = LinkColor)
             }
             Spacer(Modifier.height(2.dp))
             Text(m.quote, fontFamily = SerifFont, fontSize = 17.sp, lineHeight = 25.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = scheme.onSurface.copy(alpha = if (m.hasNote) 0.75f else 1f))
             if (m.hasNote) Text(app.obsibible.obsidian.NoteLinks.plain(m.note), fontSize = 15.sp, lineHeight = 21.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            // What is in Obsidian: the book's highlights file, and its own note if one was made.
+            Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                StatusPill(if (inFile) "In highlights file" else "Not in Obsidian yet", inFile)
+                if (m.clipped > 0) StatusPill("Own note", true)
+            }
         }
+    }
+}
+
+@Composable
+private fun StatusPill(text: String, done: Boolean) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        Modifier.clip(CircleShape).background(if (done) LinkColor.copy(alpha = 0.16f) else scheme.surfaceContainerHigh).padding(horizontal = 9.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (done) { Icon(BarIcons.obsidian, null, Modifier.size(12.dp), tint = LinkColor); Spacer(Modifier.width(5.dp)) }
+        Text(text, fontSize = 12.sp, color = if (done) LinkColor else scheme.onSurfaceVariant, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+/** What a hold on a note offers. */
+@Composable
+private fun MarkActionsSheet(
+    m: Mark, abbr: String,
+    onOpen: () -> Unit, onNote: () -> Unit, onOwnNote: () -> Unit, onCopy: () -> Unit, onShare: () -> Unit, onDelete: () -> Unit, onDismiss: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss, containerColor = scheme.surfaceContainer, dragHandle = { SheetHandle() }) {
+        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 12.dp)) {
+            Text("${m.label} $abbr", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 22.dp))
+            Text(m.quote, fontFamily = SerifFont, fontSize = 16.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = scheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 22.dp, end = 22.dp, top = 4.dp, bottom = 10.dp))
+            ActionRow(BarIcons.play, "Open in the Bible", onOpen)
+            ActionRow(BarIcons.note, if (m.hasNote) "Edit the note" else "Write a note", onNote)
+            ActionRow(BarIcons.obsidian, if (m.clipped > 0) "Make its own note again" else "Make its own note", onOwnNote)
+            ActionRow(BarIcons.copy, "Copy", onCopy)
+            ActionRow(BarIcons.share, "Share", onShare)
+            ActionRow(BarIcons.delete, "Delete", onDelete, danger = true)
+        }
+    }
+}
+
+@Composable
+private fun ActionRow(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String, onClick: () -> Unit, danger: Boolean = false) {
+    val scheme = MaterialTheme.colorScheme
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 22.dp, vertical = 15.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, null, Modifier.size(22.dp), tint = if (danger) scheme.error else scheme.onSurface)
+        Spacer(Modifier.width(18.dp))
+        Text(text, fontSize = 17.sp, color = if (danger) scheme.error else scheme.onSurface)
     }
 }

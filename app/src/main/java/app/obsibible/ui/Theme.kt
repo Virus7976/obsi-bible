@@ -70,22 +70,26 @@ fun buildScheme(mode: String): ColorScheme = if (mode == "light") {
         inverseSurface = Ink.textLight, inverseOnSurface = Ink.pageLight, inversePrimary = Ink.text,
     )
 } else {
-    val page = if (mode == "oled") Color.Black else Ink.page
+    val oled = mode == "oled"
+    val page = if (oled) Color.Black else Ink.page
+    // Black: cards, sheets and bars go black too. Only a faint step keeps a card apart from the page.
+    val card = if (oled) Color(0xFF0E0E0E) else Ink.card
+    val pill = if (oled) Color(0xFF1C1C1C) else Ink.pill
     darkColorScheme(
         primary = Ink.text, onPrimary = page,
-        primaryContainer = Ink.pill, onPrimaryContainer = Ink.text,
+        primaryContainer = pill, onPrimaryContainer = Ink.text,
         secondary = Ink.muted, onSecondary = page,
-        secondaryContainer = Ink.pill, onSecondaryContainer = Ink.text,
+        secondaryContainer = pill, onSecondaryContainer = Ink.text,
         tertiary = Ink.dot, onTertiary = Color.Black,
         background = page, onBackground = Ink.text,
         surface = page, onSurface = Ink.text,
-        surfaceVariant = Ink.card, onSurfaceVariant = Ink.muted,
+        surfaceVariant = card, onSurfaceVariant = Ink.muted,
         surfaceContainerLowest = Color.Black,
-        surfaceContainerLow = Color(0xFF1A1A1A),
-        surfaceContainer = Ink.card,
-        surfaceContainerHigh = Color(0xFF2C2C2C),
-        surfaceContainerHighest = Ink.pill,
-        outline = Color(0xFF4A4A4A), outlineVariant = Ink.line,
+        surfaceContainerLow = if (oled) Color(0xFF080808) else Color(0xFF1A1A1A),
+        surfaceContainer = card,
+        surfaceContainerHigh = if (oled) Color(0xFF161616) else Color(0xFF2C2C2C),
+        surfaceContainerHighest = pill,
+        outline = Color(0xFF4A4A4A), outlineVariant = if (oled) Color(0xFF1E1E1E) else Ink.line,
         error = Color(0xFFFF6B5E), onError = Color.Black,
         inverseSurface = Ink.text, inverseOnSurface = page, inversePrimary = Ink.textLight,
     )

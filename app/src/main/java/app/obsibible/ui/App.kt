@@ -250,6 +250,23 @@ private fun Tabs(tab: Tab, onTab: (Tab) -> Unit, push: (Screen) -> Unit, openRef
         @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
         val typing = WindowInsets.isImeVisible
         val appRef = LocalApp.current
+        // While reading, the phone's own bars hide too. A swipe from the edge shows them for a moment.
+        val hostView = androidx.compose.ui.platform.LocalView.current
+        val fullScreen = tab == Tab.Bible && appRef.reading.collectAsState().value
+        LaunchedEffect(fullScreen) {
+            val window = (hostView.context as? android.app.Activity)?.window ?: return@LaunchedEffect
+            val bars = androidx.core.view.WindowCompat.getInsetsController(window, hostView)
+            bars.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            if (fullScreen) bars.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            else bars.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+        }
+        androidx.compose.runtime.DisposableEffect(Unit) {
+            onDispose {
+                (hostView.context as? android.app.Activity)?.window?.let { w ->
+                    androidx.core.view.WindowCompat.getInsetsController(w, hostView).show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                }
+            }
+        }
         val reading by appRef.reading.collectAsState()
         LaunchedEffect(tab) { if (tab != Tab.Bible) appRef.reading.value = false }
         androidx.compose.animation.AnimatedVisibility(

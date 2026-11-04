@@ -51,6 +51,9 @@ data class AppSettings(
     val lastColor: Int = 0,
     // Obsidian: the vault folder picked with Android's folder picker, and how notes are made
     val vaultTree: String = "",
+    /** Every highlight is kept in one Markdown file per book in this vault folder. */
+    val highlightsFile: Boolean = true,
+    val highlightsFolder: String = "Bible/Highlights",
     val vaultName: String = "",
     val clipFolder: String = "Bible",
     val clipAppend: Boolean = false,

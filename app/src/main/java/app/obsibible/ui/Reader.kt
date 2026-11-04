@@ -137,7 +137,9 @@ fun BibleTab(openSearch: () -> Unit, openVersions: () -> Unit, onBack: () -> Uni
 
     fun go(r: Ref?) { r ?: return; app.settings.update { it.copy(lastRef = r.key) } }
 
-    Column(Modifier.fillMaxSize()) {
+    val reading by app.reading.collectAsState()
+    // Full screen: the tabs are gone, so the play bar keeps clear of the phone's own buttons.
+    Column(Modifier.fillMaxSize().then(if (reading) Modifier.navigationBarsPadding() else Modifier)) {
         Row(Modifier.fillMaxWidth().statusBarsPadding().padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", Modifier.size(26.dp)) }
             Spacer(Modifier.weight(1f))
