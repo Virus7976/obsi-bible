@@ -84,7 +84,11 @@ class PhoneSpeech(context: Context) {
     private fun friendly(name: String, region: String): String {
         // Google names look like en-us-x-iol-local. Keep the short voice code so they can be told apart.
         val code = Regex("-x-([a-z]+)").find(name)?.groupValues?.get(1)
-        return if (code != null) "$region ${code.uppercase()}" else name
+        return when {
+            code != null -> "$region ${code.uppercase()}"
+            name.endsWith("-language") -> "$region standard"
+            else -> name
+        }
     }
 
     /**

@@ -24,6 +24,8 @@ class ObsiBibleApp : Application() {
         private set
     lateinit var audio: AudioEngine
         private set
+    lateinit var marks: app.obsibible.data.MarksStore
+        private set
 
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -33,16 +35,23 @@ class ObsiBibleApp : Application() {
     /** Set when the update notification was tapped. The app shows the update, or installs it. */
     val updateTapped = MutableStateFlow<Boolean?>(null)
 
+    /** A highlight opened from the You tab. The reader opens it and clears it. */
+    val openMark = MutableStateFlow<String?>(null)
+
     override fun onCreate() {
         super.onCreate()
         settings = SettingsStore(this)
         updates = SelfUpdate(this, settings)
         bibles = Bibles(this)
         audio = AudioEngine(this)
+        marks = app.obsibible.data.MarksStore(this)
         UpdateNotice.schedule(this)
         // Check every time the app comes to the front (at most once an hour).
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
-            override fun onStart(owner: LifecycleOwner) = updates.checkIfDue()
+            override fun onStart(owner: LifecycleOwner) {
+                updates.resumeAfterPermission()
+                updates.checkIfDue()
+            }
         })
     }
 }

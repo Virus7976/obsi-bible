@@ -39,6 +39,17 @@ data class AppSettings(
     val lastUpdateCheck: Long = 0L,
     val notifiedVersion: String = "",
     val askedNotifications: Boolean = false,
+    // highlights
+    val lastColor: Int = 0,
+    // Obsidian: the vault folder picked with Android's folder picker, and how notes are made
+    val vaultTree: String = "",
+    val vaultName: String = "",
+    val clipFolder: String = "Bible",
+    val clipAppend: Boolean = false,
+    val clipFile: String = "Bible highlights",
+    val clipName: String = "",
+    val clipTemplate: String = "",
+    val clipEntry: String = "",
 )
 
 /**

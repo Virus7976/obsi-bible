@@ -42,6 +42,9 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import app.obsibible.data.AppSettings
 import app.obsibible.update.UpdateNotice
 import app.obsibible.update.UpdateState
+import app.obsibible.obsidian.NoteBuilder
+import app.obsibible.obsidian.Sender
+import app.obsibible.obsidian.VaultIndex
 
 @Composable
 fun SettingsScreen(onBack: () -> Unit) {
@@ -83,6 +86,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                 )
                 OutlinedTextField(region, { region = it.trim().lowercase(); set { st -> st.copy(cloudRegion = region) } }, Modifier.fillMaxWidth(), label = { Text("Region, such as eastus") }, singleLine = true)
             }
+            ObsidianGroup()
         }
     }
     if (voices) VoicePicker(s.bible) { voices = false }
@@ -185,5 +189,43 @@ private fun UpdateGroup() {
                 context.startActivity(Intent(AndroidSettings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(AndroidSettings.EXTRA_APP_PACKAGE, context.packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             }) { Text("Turn on notifications") }
         }
+    }
+}
+
+@Composable
+private fun ObsidianGroup() {
+    val app = LocalApp.current
+    val s by app.settings.state.collectAsState()
+    val context = LocalContext.current
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    val pick = rememberVaultPicker { VaultIndex.forget() }
+    val folder = remember(s.vaultTree) { if (s.vaultTree.isBlank()) null else Sender.folderName(context, s.vaultTree) }
+    Group("Obsidian") {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Vault folder", style = MaterialTheme.typography.titleSmall)
+                Text(folder ?: "Not picked. Notes go through the Obsidian app.", color = muted)
+            }
+            OutlinedButton(onClick = pick) { Text(if (folder == null) "Pick" else "Change") }
+        }
+        var vault by remember { mutableStateOf(s.vaultName) }
+        OutlinedTextField(vault, { vault = it; app.settings.update { st -> st.copy(vaultName = it.trim()) } }, Modifier.fillMaxWidth(), label = { Text("Vault name") }, singleLine = true)
+        var sub by remember { mutableStateOf(s.clipFolder) }
+        OutlinedTextField(sub, { sub = it; app.settings.update { st -> st.copy(clipFolder = it.trim()) } }, Modifier.fillMaxWidth(), label = { Text("Folder for Bible notes") }, singleLine = true)
+        var file by remember { mutableStateOf(s.clipFile) }
+        OutlinedTextField(file, { file = it; app.settings.update { st -> st.copy(clipFile = it.trim().ifEmpty { "Bible highlights" }) } }, Modifier.fillMaxWidth(), label = { Text("Running note name") }, singleLine = true)
+        var name by remember { mutableStateOf(s.clipName) }
+        OutlinedTextField(name, { name = it; app.settings.update { st -> st.copy(clipName = it) } }, Modifier.fillMaxWidth(), label = { Text("New note name") }, placeholder = { Text(NoteBuilder.DEFAULT_NAME) }, singleLine = true)
+        var template by remember { mutableStateOf(s.clipTemplate.ifBlank { NoteBuilder.DEFAULT_TEMPLATE }) }
+        OutlinedTextField(
+            template, { template = it; app.settings.update { st -> st.copy(clipTemplate = if (it == NoteBuilder.DEFAULT_TEMPLATE) "" else it) } },
+            Modifier.fillMaxWidth(), label = { Text("New note template") },
+            textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace), minLines = 6,
+        )
+        Text("You can use: " + NoteBuilder.VARIABLES.joinToString(" ") { "{{$it}}" }, color = muted, style = MaterialTheme.typography.bodySmall)
+        if (s.clipTemplate.isNotBlank()) TextButton(onClick = {
+            template = NoteBuilder.DEFAULT_TEMPLATE
+            app.settings.update { it.copy(clipTemplate = "") }
+        }) { Text("Reset template") }
     }
 }

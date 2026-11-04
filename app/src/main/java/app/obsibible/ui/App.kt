@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.StickyNote2
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.Book
@@ -76,7 +77,7 @@ val LocalApp = staticCompositionLocalOf<ObsiBibleApp> { error("no app") }
 enum class Tab(val label: String, val icon: ImageVector) {
     Home("Home", Icons.Outlined.Home),
     Bible("Bible", Icons.Outlined.Book),
-    Plans("Plans", Icons.Outlined.LibraryAddCheck),
+    Notes("Notes", Icons.AutoMirrored.Outlined.StickyNote2),
     Search("Search", Icons.Outlined.Search),
     You("You", Icons.Outlined.AccountCircle),
 }
@@ -226,8 +227,8 @@ private fun Tabs(tab: Tab, onTab: (Tab) -> Unit, push: (Screen) -> Unit, openRef
                 Tab.Home -> HomeTab(openRef = openRef, openSearch = { onTab(Tab.Search) })
                 Tab.Bible -> BibleTab(openSearch = { push(Screen.Search) }, openVersions = { push(Screen.Versions) })
                 Tab.Search -> SearchScreen(onOpen = openRef, onBack = null, autofocus = false)
-                Tab.You -> YouTab(openSettings = { push(Screen.Settings) })
-                Tab.Plans -> PlansTab()
+                Tab.You -> YouTab(openSettings = { push(Screen.Settings) }, openRef = openRef)
+                Tab.Notes -> NotesTab(openRef = openRef)
             }
         }
         BottomTabs(tab, onTab)
@@ -258,30 +259,6 @@ private fun BottomTabs(tab: Tab, onTab: (Tab) -> Unit) {
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun YouTab(openSettings: () -> Unit) {
-    val update by LocalApp.current.updates.state.collectAsState()
-    Column(Modifier.fillMaxSize().statusBarsPadding()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Spacer(Modifier.weight(1f))
-            Box {
-                IconButton(onClick = openSettings) { Icon(Icons.Outlined.Settings, "Settings", Modifier.size(28.dp)) }
-                if (update is UpdateState.Available) Box(Modifier.align(Alignment.TopEnd).padding(10.dp).size(9.dp).clip(androidx.compose.foundation.shape.CircleShape).background(Ink.dot))
-            }
-        }
-        Text("Highlights and notes show here.", Modifier.padding(24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-@Composable
-private fun PlansTab() {
-    Column(Modifier.fillMaxSize().statusBarsPadding().padding(24.dp)) {
-        Text("Plans", style = MaterialTheme.typography.headlineMedium)
-        Spacer(Modifier.height(12.dp))
-        Text("Reading plans come in a later version.", color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

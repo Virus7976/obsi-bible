@@ -65,6 +65,11 @@ import app.obsibible.bible.Bibles
 import app.obsibible.bible.Book
 import app.obsibible.bible.Books
 import app.obsibible.bible.Hit
+import app.obsibible.bible.Found
+import app.obsibible.obsidian.NoteLinks
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import app.obsibible.bible.Ref
 import app.obsibible.bible.Scope
 import kotlinx.coroutines.Dispatchers
@@ -83,7 +88,9 @@ fun SearchScreen(onOpen: (Ref) -> Unit, onBack: (() -> Unit)?, autofocus: Boolea
     var field by remember { mutableStateOf(TextFieldValue("")) }
     val q = field.text
     var where by remember { mutableStateOf(Scope.All) }
-    var results by remember { mutableStateOf<Pair<Int, List<Hit>>>(0 to emptyList()) }
+    var results by remember { mutableStateOf(Found(0, emptyList())) }
+    val allMarks by app.marks.all.collectAsState()
+    val installed by app.bibles.installed.collectAsState()
     var searching by remember { mutableStateOf(false) }
     var openBook by remember { mutableStateOf<String?>(null) }
     val scheme = MaterialTheme.colorScheme
@@ -97,12 +104,21 @@ fun SearchScreen(onOpen: (Ref) -> Unit, onBack: (() -> Unit)?, autofocus: Boolea
         if (letters.isBlank()) emptyList() else Books.match(letters).take(4)
     }
     val wordsQuery = q.trim().length >= 2 && Bibles.matchQuery(q) != null && !(parsed?.chapterGiven == true && books.isNotEmpty())
+    // your own highlights and notes; "#tag" finds by tag
+    val mine = remember(q, allMarks) {
+        val t = q.trim()
+        when {
+            t.length < 2 -> emptyList()
+            t.startsWith("#") -> allMarks.filter { m -> m.tags.any { it.startsWith(t.drop(1), true) } }.sortedByDescending { it.updated }
+            else -> Fuzzy.filter(t, allMarks.filter { it.hasColor || it.hasNote }) { NoteLinks.plain(it.note) + " " + it.quote + " " + it.tags.joinToString(" ") { "#$it" } + " " + it.label }
+        }.take(6)
+    }
     val recent = remember(q, s.recentSearches) {
         if (q.isBlank()) s.recentSearches else Fuzzy.filter(q, s.recentSearches) { it }.take(8)
     }
 
     LaunchedEffect(q, where, bibleVersion) {
-        if (!wordsQuery) { results = 0 to emptyList(); return@LaunchedEffect }
+        if (!wordsQuery) { results = Found(0, emptyList()); return@LaunchedEffect }
         delay(180)
         searching = true
         results = withContext(Dispatchers.IO) { app.bibles.search(s.bible, q, where, currentBook) }
@@ -176,15 +192,30 @@ fun SearchScreen(onOpen: (Ref) -> Unit, onBack: (() -> Unit)?, autofocus: Boolea
                     }, onFill = { field = TextFieldValue(r, TextRange(r.length)) })
                 }
             }
+            // your highlights and notes
+            if (mine.isNotEmpty()) {
+                item(key = "mine-label") { SectionTitle("Your highlights and notes") }
+                items(mine, key = { "mine-${it.id}" }) { m ->
+                    val abbr = installed.firstOrNull { it.id == m.bible }?.abbreviation ?: m.bible
+                    MarkRow(m, abbr, q) { app.openMark.value = m.id; open(m.ref) }
+                }
+            }
             // words in verses (hidden when a book matched and no verse has the words)
-            if (wordsQuery && (books.isEmpty() || searching || results.second.isNotEmpty())) {
+            if (wordsQuery && !q.trim().startsWith("#") && (books.isEmpty() || searching || results.hits.isNotEmpty())) {
                 item(key = "scope") {
                     Column(Modifier.padding(top = 18.dp)) {
                         Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text("Verses", style = MaterialTheme.typography.titleLarge)
                             Spacer(Modifier.size(10.dp))
-                            Text(if (searching) "…" else results.first.toString(), color = scheme.onSurfaceVariant, fontSize = 16.sp)
+                            Text(if (searching) "…" else results.total.toString(), color = scheme.onSurfaceVariant, fontSize = 16.sp)
                         }
+                        val note = when {
+                            searching -> null
+                            results.fixed != null -> "Showing results for “${results.fixed}”."
+                            results.partial -> "No verse has every word. These have most of them."
+                            else -> null
+                        }
+                        if (note != null) Text(note, Modifier.padding(horizontal = 20.dp, vertical = 4.dp), color = scheme.onSurfaceVariant, fontSize = 15.sp)
                         Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Scope.entries.forEach { sc ->
                                 val label = if (sc == Scope.Book) Books.get(currentBook ?: "")?.name ?: "This book" else sc.label
@@ -193,12 +224,12 @@ fun SearchScreen(onOpen: (Ref) -> Unit, onBack: (() -> Unit)?, autofocus: Boolea
                         }
                     }
                 }
-                if (!searching && results.second.isEmpty()) item(key = "none") {
+                if (!searching && results.hits.isEmpty()) item(key = "none") {
                     Text("No verses have these words.", Modifier.padding(horizontal = 20.dp, vertical = 8.dp), color = scheme.onSurfaceVariant)
                 }
-                items(results.second, key = { "hit-${it.ref.key}" }) { h -> HitRow(h, q) { open(h.ref) } }
-                if (results.first > results.second.size) item(key = "more") {
-                    Text("Showing the first ${results.second.size}. Add a word to narrow it down.", Modifier.padding(20.dp), color = scheme.onSurfaceVariant, fontSize = 14.sp)
+                items(results.hits, key = { "hit-${it.ref.key}" }) { h -> HitRow(h, results.fixed ?: q) { open(h.ref) } }
+                if (results.total > results.hits.size) item(key = "more") {
+                    Text("Showing the best ${results.hits.size}. Add a word to narrow it down.", Modifier.padding(20.dp), color = scheme.onSurfaceVariant, fontSize = 14.sp)
                 }
             }
             // nothing typed: every book, to go to a chapter
@@ -288,6 +319,24 @@ private fun ScopeChip(label: String, on: Boolean, onClick: () -> Unit) {
         Modifier.clip(CircleShape).background(if (on) scheme.onSurface else scheme.surfaceContainer)
             .clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 9.dp),
     ) { Text(label, color = if (on) scheme.surface else scheme.onSurface, fontSize = 15.sp, fontWeight = FontWeight.SemiBold) }
+}
+
+/** One of your highlights or notes in the search results. */
+@Composable
+private fun MarkRow(m: app.obsibible.data.Mark, abbr: String, q: String, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val bar = if (m.hasColor) androidx.compose.ui.graphics.Color(app.obsibible.data.HighlightColors[m.color.coerceIn(app.obsibible.data.HighlightColors.indices)].ui) else scheme.onSurfaceVariant
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 10.dp).height(androidx.compose.foundation.layout.IntrinsicSize.Min)) {
+        Box(Modifier.width(4.dp).fillMaxHeight().clip(RoundedCornerShape(2.dp)).background(bar))
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text("${m.label} $abbr", style = MaterialTheme.typography.titleSmall, color = scheme.onSurfaceVariant)
+            Spacer(Modifier.height(2.dp))
+            Text(boldMatches(m.quote, q), fontFamily = SerifFont, fontSize = 17.sp, lineHeight = 25.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (m.hasNote) Text(boldMatches(NoteLinks.plain(m.note), q), fontSize = 15.sp, lineHeight = 21.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (m.tags.isNotEmpty()) Text(m.tags.joinToString("  ") { "#$it" }, color = scheme.onSurfaceVariant, fontSize = 13.sp)
+        }
+    }
 }
 
 @Composable

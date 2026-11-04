@@ -62,6 +62,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import app.obsibible.bible.InstallState
 import app.obsibible.bible.Ref
+import app.obsibible.data.Mark
+import app.obsibible.data.Marks
+import app.obsibible.obsidian.Clip
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -85,6 +88,18 @@ fun BibleTab(openSearch: () -> Unit, openVersions: () -> Unit) {
     var note by remember { mutableStateOf<String?>(null) }
     var page by remember { mutableStateOf<PageView?>(null) }
     val abbreviation = installed.firstOrNull { it.id == s.bible }?.abbreviation ?: s.bible
+    val allMarks by app.marks.all.collectAsState()
+    val chapterMarks = remember(allMarks, s.bible, ref.book, ref.chapter) { allMarks.filter { it.sameChapter(s.bible, ref.book, ref.chapter) } }
+    var openMark by remember(ref.chapterRef, s.bible) { mutableStateOf<String?>(null) }
+    var noteFor by remember { mutableStateOf<String?>(null) }
+    var clipping by remember { mutableStateOf<Pair<Clip, Int>?>(null) }
+    var clipMark by remember { mutableStateOf<String?>(null) }
+    val open = chapterMarks.firstOrNull { it.id == openMark }
+    val pendingMark by app.openMark.collectAsState()
+    LaunchedEffect(pendingMark, chapterMarks) {
+        val id = pendingMark ?: return@LaunchedEffect
+        if (chapterMarks.any { it.id == id }) { openMark = id; selected = emptySet(); app.openMark.value = null }
+    }
 
     LaunchedEffect(ref.chapterRef, s.bible, bibleVersion) {
         chapter = withContext(Dispatchers.IO) { app.bibles.chapter(s.bible, ref.chapterRef) }
@@ -130,13 +145,25 @@ fun BibleTab(openSearch: () -> Unit, openVersions: () -> Unit) {
                         factory = { ctx -> PageView(ctx).also { page = it } },
                         modifier = Modifier.fillMaxSize().clipToBounds(),
                         update = { v ->
-                            v.onVerseTap = { verse -> selected = if (verse in selected) selected - verse else selected + verse }
+                            v.onVerseTap = { verse ->
+                                if (openMark != null) openMark = null
+                                else selected = if (verse in selected) selected - verse else selected + verse
+                            }
                             v.onNoteTap = { note = it }
+                            v.onMarkTap = { id -> selected = emptySet(); openMark = if (openMark == id) null else id }
+                            v.onNoteIconTap = { id -> selected = emptySet(); openMark = id; noteFor = id }
+                            v.onResize = { id, v1, c1, v2, c2 ->
+                                app.marks.get(id)?.let { m ->
+                                    val moved = m.copy(v1 = v1, c1 = c1, v2 = v2, c2 = c2, updated = System.currentTimeMillis())
+                                    app.marks.put(moved.copy(quote = Marks.quote(ch.verses().toMap(), moved)))
+                                }
+                            }
                             // The key comes from the chapter itself, never from the pill: while the next
                             // chapter loads, the old text must not be filed under the new name.
                             val shown = Ref(ch.book, ch.number)
                             v.show(ch, "${s.bible}/${shown.key}/${colors.text}/${s.readerFontSize}/$bibleVersion", s.readerFontSize, s.lineHeight, colors, padH, with(density) { 40.dp.roundToPx() }, with(density) { 120.dp.roundToPx() })
                             v.setSelected(selected)
+                            v.setMarks(chapterMarks, openMark)
                             val following = audio.active && audio.bible == s.bible && audio.ref == shown
                             v.setFollow(if (following) audio.verse else 0, if (following) audio.word else null, following && audio.playing)
                         },
@@ -159,12 +186,67 @@ fun BibleTab(openSearch: () -> Unit, openVersions: () -> Unit) {
         }
 
         HorizontalDivider(color = scheme.outlineVariant)
-        if (selected.isNotEmpty()) {
-            VerseActions(
+        if (open != null) {
+            val m = open
+            MarkBar(
+                label = m.label,
+                hint = if (m.hasColor) "Drag the ends to change it." else if (m.hasNote) "Note" else null,
+                color = m.color.takeIf { it >= 0 },
+                onColor = { c ->
+                    app.marks.put(m.copy(color = c, updated = System.currentTimeMillis()))
+                    app.settings.update { it.copy(lastColor = c) }
+                },
+                onNoColor = if (m.hasColor) ({
+                    if (m.hasNote) app.marks.put(m.copy(color = -1, updated = System.currentTimeMillis())) else { app.marks.remove(m.id); openMark = null }
+                }) else null,
+                actions = listOf(
+                    BarAction(BarIcons.note, "Note") { noteFor = m.id },
+                    BarAction(BarIcons.obsidian, "Obsidian") { clipping = clipFor(app, m) to m.color; clipMark = m.id },
+                    BarAction(BarIcons.copy, "Copy") { copyText(context, markText(app, m, abbreviation)); openMark = null },
+                    BarAction(BarIcons.share, "Share") { shareText(context, markText(app, m, abbreviation)); openMark = null },
+                    BarAction(BarIcons.delete, "Delete") { app.marks.remove(m.id); openMark = null },
+                ),
+                onClose = { openMark = null },
+            )
+        } else if (selected.isNotEmpty()) {
+            val ch = chapter
+            val touched = chapterMarks.any { m -> selected.any { m.covers(it) } && m.hasColor }
+            MarkBar(
                 label = Ref(ref.book, ref.chapter, selected.min(), if (selected.size > 1) selected.max() else 0).label,
-                onPlay = { app.audio.play(s.bible, ref.chapterRef, selected.min()); selected = emptySet() },
-                onCopy = { copyVerses(context, app, s.bible, ref, selected, abbreviation); selected = emptySet() },
-                onShare = { shareVerses(context, app, s.bible, ref, selected, abbreviation); selected = emptySet() },
+                hint = "Pick a colour to highlight.",
+                color = null,
+                onColor = { c ->
+                    if (ch != null) {
+                        val (list, added) = Marks.paint(app.marks.all.value, s.bible, ref.book, ref.chapter, selected, c, ch.verses().toMap())
+                        app.marks.set(list)
+                        app.settings.update { it.copy(lastColor = c) }
+                        selected = emptySet()
+                        openMark = added.singleOrNull()?.id
+                    }
+                },
+                onNoColor = if (touched) ({ app.marks.set(Marks.erase(app.marks.all.value, s.bible, ref.book, ref.chapter, selected)); selected = emptySet() }) else null,
+                actions = listOf(
+                    BarAction(BarIcons.play, "Play") { app.audio.play(s.bible, ref.chapterRef, selected.min()); selected = emptySet() },
+                    BarAction(BarIcons.note, "Note") {
+                        if (ch != null) {
+                            val m0 = Mark(bible = s.bible, book = ref.book, chapter = ref.chapter, v1 = selected.min(), v2 = selected.max(), color = -1)
+                            val m = m0.copy(quote = Marks.quote(ch.verses().toMap(), m0))
+                            app.marks.put(m)
+                            selected = emptySet()
+                            openMark = m.id
+                            noteFor = m.id
+                        }
+                    },
+                    BarAction(BarIcons.obsidian, "Obsidian") {
+                        if (ch != null) {
+                            val m = Mark(bible = s.bible, book = ref.book, chapter = ref.chapter, v1 = selected.min(), v2 = selected.max(), color = -1)
+                            clipping = clipFor(app, m) to -1
+                            clipMark = null
+                        }
+                    },
+                    BarAction(BarIcons.copy, "Copy") { copyVerses(context, app, s.bible, ref, selected, abbreviation); selected = emptySet() },
+                    BarAction(BarIcons.share, "Share") { shareVerses(context, app, s.bible, ref, selected, abbreviation); selected = emptySet() },
+                ),
                 onClose = { selected = emptySet() },
             )
         } else {
@@ -204,6 +286,26 @@ fun BibleTab(openSearch: () -> Unit, openVersions: () -> Unit) {
         onDismiss = { sheet = false },
     )
     if (textSheet) TextSizeSheet { textSheet = false }
+    noteFor?.let { id ->
+        val m = allMarks.firstOrNull { it.id == id }
+        if (m == null) noteFor = null else NoteSheet(
+            m,
+            onSave = { text, tags ->
+                val now = app.marks.get(id)
+                if (now != null) {
+                    if (text.isBlank() && !now.hasColor) { app.marks.remove(id); if (openMark == id) openMark = null }
+                    else if (text != now.note || tags != now.tags) app.marks.put(now.copy(note = text, tags = tags, updated = System.currentTimeMillis()))
+                }
+            },
+            onDismiss = { noteFor = null },
+        )
+    }
+    clipping?.let { (clip, color) ->
+        ClipSheet(clip, color, onSent = {
+            clipMark?.let { id -> app.marks.get(id)?.let { app.marks.put(it.copy(clipped = System.currentTimeMillis())) } }
+            clipping = null; selected = emptySet()
+        }, onDismiss = { clipping = null })
+    }
     note?.let { n ->
         ModalBottomSheet(onDismissRequest = { note = null }, containerColor = scheme.surfaceContainer, dragHandle = { SheetHandle() }) {
             Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 24.dp).padding(bottom = 28.dp)) {
@@ -215,31 +317,26 @@ fun BibleTab(openSearch: () -> Unit, openVersions: () -> Unit) {
     }
 }
 
-@Composable
-private fun VerseActions(label: String, onPlay: () -> Unit, onCopy: () -> Unit, onShare: () -> Unit, onClose: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onClose) { Icon(Icons.Rounded.Close, "Clear", Modifier.size(26.dp)) }
-        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, maxLines = 1)
-        Action(Icons.Rounded.PlayArrow, "Play", onPlay)
-        Action(Icons.Outlined.ContentCopy, "Copy", onCopy)
-        Action(Icons.Outlined.Share, "Share", onShare)
-    }
-}
-
-@Composable
-private fun Action(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
-    Column(Modifier.clip(MaterialTheme.shapes.small).clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(icon, null, Modifier.size(24.dp))
-        Text(label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-    }
-}
-
 private fun versesText(app: app.obsibible.ObsiBibleApp, bible: String, ref: Ref, verses: Set<Int>, abbr: String): String {
     val ch = app.bibles.chapter(bible, ref.chapterRef) ?: return ""
     val text = ch.verses().filter { it.first in verses }.joinToString(" ") { if (verses.size > 1) "${it.first} ${it.second}" else it.second }
     val sorted = verses.sorted()
     val label = Ref(ref.book, ref.chapter, sorted.first(), if (sorted.size > 1) sorted.last() else 0).label
     return "$text\n$label $abbr"
+}
+
+private fun markText(app: app.obsibible.ObsiBibleApp, m: Mark, abbr: String): String {
+    val c = clipFor(app, m)
+    return "${c.text}\n${m.label} $abbr"
+}
+
+private fun copyText(context: Context, text: String) {
+    context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Verse", text))
+}
+
+private fun shareText(context: Context, text: String) {
+    val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
+    context.startActivity(Intent.createChooser(send, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
 }
 
 private fun copyVerses(context: Context, app: app.obsibible.ObsiBibleApp, bible: String, ref: Ref, verses: Set<Int>, abbr: String) {

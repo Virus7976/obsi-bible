@@ -234,6 +234,15 @@ class SelfUpdate(private val context: Context, private val settings: SettingsSto
     // One tap does it all: ask Android for approval first, download while the user taps OK,
     // then install with no second prompt. Android 14 and up can do the approval up front.
     private var sessionId = -1
+
+    /** The update waiting while the user is on the Android permission screen. */
+    private var afterPermission: UpdateInfo? = null
+
+    /** Called when the app comes back to the front: goes on with the update once installs are allowed. */
+    fun resumeAfterPermission() {
+        val info = afterPermission ?: return
+        if (canInstall()) installFlow(info)
+    }
     private var approved = false
     private var downloaded: UpdateState.Ready? = null
     private var installWhenDone = false
@@ -254,7 +263,8 @@ class SelfUpdate(private val context: Context, private val settings: SettingsSto
     /** The Install button. Approval first, then download, then install. */
     fun installFlow(info: UpdateInfo) {
         val method = settings.value.installMethod
-        if (method == "system" && !canInstall()) { askPermission(); return }
+        if (method == "system" && !canInstall()) { afterPermission = info; askPermission(); return }
+        afterPermission = null
         _notice.value = null
         sessionId = -1; approved = false; downloaded = null; installWhenDone = true
         if (method == "system" && Build.VERSION.SDK_INT >= 34) {

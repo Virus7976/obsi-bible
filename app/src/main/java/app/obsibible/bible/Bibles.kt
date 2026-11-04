@@ -21,6 +21,9 @@ data class BibleInfo(val id: String, val abbreviation: String, val name: String,
 /** One search hit. */
 data class Hit(val ref: Ref, val text: String)
 
+/** What a word search found. [fixed] is the query after a typo was fixed. [partial] means not every word is in each verse. */
+data class Found(val total: Int, val hits: List<Hit>, val fixed: String? = null, val partial: Boolean = false)
+
 /** Where a search looks. */
 enum class Scope(val label: String) { All("All"), Old("Old Testament"), New("New Testament"), Book("This book") }
 
@@ -108,21 +111,64 @@ class Bibles(private val context: Context) {
      * Word search. Every word must appear; the last word also matches as a prefix,
      * so results show while typing. Results come in Bible order.
      */
-    fun search(id: String, query: String, where: Scope, book: String?, limit: Int = 300): Pair<Int, List<Hit>> {
-        val db = db(id) ?: return 0 to emptyList()
-        val match = matchQuery(query) ?: return 0 to emptyList()
+    /**
+     * Word search, best match first. A typo is fixed by itself ([Found.fixed]). When no verse has
+     * every word, verses with most of the words are shown ([Found.partial]).
+     */
+    fun search(id: String, query: String, where: Scope, book: String?, limit: Int = 300): Found {
+        val db = db(id) ?: return Found(0, emptyList())
         val (lo, hi) = range(where, book)
-        // The range goes into the SQL as numbers: a bound "?" is text, and in SQLite text never equals a number.
-        val args = arrayOf(match)
-        val cond = "verses MATCH ? AND ord BETWEEN $lo AND $hi"
-        val total = db.rawQuery("SELECT count(*) FROM verses WHERE $cond", args).use { c ->
-            if (c.moveToFirst()) c.getInt(0) else 0
+        val phrase = Regex("\"([^\"]+)\"").containsMatchIn(query)
+        val typed = SearchRank.words(normalize(query.replace("\"", " ")))
+        if (typed.isEmpty()) return Found(0, emptyList())
+
+        fun run(match: String, words: List<String>, cap: Int): Pair<Int, List<Hit>> {
+            // The range goes into the SQL as numbers: a bound "?" is text, and in SQLite text never equals a number.
+            val cond = "verses MATCH ? AND ord BETWEEN $lo AND $hi"
+            val total = db.rawQuery("SELECT count(*) FROM verses WHERE $cond", arrayOf(match)).use { c -> if (c.moveToFirst()) c.getInt(0) else 0 }
+            if (total == 0) return 0 to emptyList()
+            val rows = ArrayList<Triple<Hit, Int, Long>>()
+            db.rawQuery("SELECT book, ch, v, text, norm, ord FROM verses WHERE $cond ORDER BY ord LIMIT $cap", arrayOf(match)).use { c ->
+                while (c.moveToNext()) rows += Triple(Hit(Ref(c.getString(0), c.getInt(1), c.getInt(2)), c.getString(3)), SearchRank.score(c.getString(4), words), c.getLong(5))
+            }
+            val ranked = rows.sortedWith(compareByDescending<Triple<Hit, Int, Long>> { it.second }.thenBy { it.third }).map { it.first }
+            return total to ranked.take(limit)
         }
-        val hits = ArrayList<Hit>()
-        db.rawQuery("SELECT book, ch, v, text FROM verses WHERE $cond ORDER BY ord LIMIT $limit", args).use { c ->
-            while (c.moveToNext()) hits += Hit(Ref(c.getString(0), c.getInt(1), c.getInt(2)), c.getString(3))
+
+        val match = matchQuery(query) ?: return Found(0, emptyList())
+        val (total, hits) = run(match, typed, 3000)
+        if (total > 0 || phrase) return Found(total, hits)
+
+        // a typo: fix each word against the words this Bible has
+        SearchRank.correct(typed, vocabulary(id))?.let { fixed ->
+            val q2 = fixed.joinToString(" ")
+            matchQuery(q2)?.let { m ->
+                val (t2, h2) = run(m, fixed, 3000)
+                if (t2 > 0) return Found(t2, h2, fixed = q2)
+            }
         }
-        return total to hits
+        // no verse has every word: show verses with most of them
+        if (typed.size > 1) {
+            val any = typed.mapIndexed { i, w -> if (i == typed.lastIndex) "norm:$w*" else "norm:$w" }.joinToString(" OR ")
+            val (t3, h3) = run(any, typed, 3000)
+            if (t3 > 0) return Found(t3, h3, partial = true)
+        }
+        return Found(0, emptyList())
+    }
+
+    private val vocab = HashMap<String, Map<String, Int>>()
+
+    /** Every word in a Bible with how often it is used. Built once, the first time a typo needs it. */
+    @Synchronized
+    fun vocabulary(id: String): Map<String, Int> {
+        vocab[id]?.let { return it }
+        val db = db(id) ?: return emptyMap()
+        val counts = HashMap<String, Int>(20000)
+        db.rawQuery("SELECT norm FROM verses", null).use { c ->
+            while (c.moveToNext()) for (w in c.getString(0).split(' ')) if (w.length >= 2) counts[w] = (counts[w] ?: 0) + 1
+        }
+        vocab[id] = counts
+        return counts
     }
 
     private fun range(where: Scope, book: String?): Pair<Long, Long> = when (where) {

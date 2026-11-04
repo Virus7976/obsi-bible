@@ -29,6 +29,9 @@ import androidx.core.widget.NestedScrollView
 import app.obsibible.R
 import app.obsibible.bible.Chapter
 import app.obsibible.bible.Seg
+import app.obsibible.data.HighlightColors
+import app.obsibible.data.Mark
+import app.obsibible.data.Marks
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -41,7 +44,7 @@ data class PageColors(val text: Int, val muted: Int, val faint: Int, val mark: I
  */
 @SuppressLint("ViewConstructor", "ClickableViewAccessibility")
 class PageView(context: Context) : NestedScrollView(context) {
-    val text = TextView(context)
+    val text = PageText(context)
     private var verseStarts: List<Pair<Int, Int>> = emptyList() // verse -> start offset, in order
     private var verseEnds: Map<Int, Int> = emptyMap()
     private var follow: MarkSpan? = null
@@ -50,6 +53,19 @@ class PageView(context: Context) : NestedScrollView(context) {
     private var colors = PageColors(0, 0, 0, 0, 0, 0)
     private var lastTouch = 0L
     private var shownKey = ""
+    private var plain: Map<Int, String> = emptyMap()
+    private val maps = HashMap<Int, IntArray>()
+    private val markSpans = ArrayList<MarkSpan>()
+    private var marks: List<Mark> = emptyList()
+    private var openId: String? = null
+    private var marksKey: Any? = null
+
+    /** A highlight was tapped. */
+    var onMarkTap: (String) -> Unit = {}
+    /** A note icon in the margin was tapped. */
+    var onNoteIconTap: (String) -> Unit = {}
+    /** The ends of the open highlight were dragged: new start verse and letter, end verse and letter. */
+    var onResize: (id: String, v1: Int, c1: Int, v2: Int, c2: Int) -> Unit = { _, _, _, _, _ -> }
 
     var onVerseTap: (Int) -> Unit = {}
     var onNoteTap: (String) -> Unit = {}
@@ -67,21 +83,6 @@ class PageView(context: Context) : NestedScrollView(context) {
         frame.addView(text, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
         addView(frame, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         setOnScrollChangeListener { _, _, _, _, _ -> onScrolled() }
-        val slop = ViewConfiguration.get(context).scaledTouchSlop
-        var downX = 0f
-        var downY = 0f
-        var downAt = 0L
-        text.setOnTouchListener { _, e ->
-            when (e.actionMasked) {
-                MotionEvent.ACTION_DOWN -> { downX = e.x; downY = e.y; downAt = System.currentTimeMillis(); lastTouch = downAt }
-                MotionEvent.ACTION_UP -> {
-                    lastTouch = System.currentTimeMillis()
-                    if (abs(e.x - downX) < slop && abs(e.y - downY) < slop && lastTouch - downAt < 500) tap(e.x, e.y)
-                }
-            }
-            false
-        }
-        setOnTouchListener { _, e -> if (e.actionMasked == MotionEvent.ACTION_MOVE) lastTouch = System.currentTimeMillis(); false }
     }
 
     private fun dp(v: Float) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, resources.displayMetrics)
@@ -106,6 +107,9 @@ class PageView(context: Context) : NestedScrollView(context) {
         verseStarts = built.starts
         verseEnds = built.ends
         follow = null; word = null; selected.clear(); followKey = null
+        plain = chapter.verses().toMap()
+        maps.clear(); markSpans.clear(); marksKey = null
+        text.setPins(-1, -1, 0); text.notes = emptyList()
         text.setText(built.text, TextView.BufferType.SPANNABLE)
         if (keepVerse > 1) scrollToVerse(keepVerse, false) else scrollTo(0, 0)
     }
@@ -322,6 +326,282 @@ class PageView(context: Context) : NestedScrollView(context) {
         text.invalidate()
     }
 
+    // ---------- saved highlights ----------
+
+    private fun mapOf(verse: Int): IntArray? {
+        maps[verse]?.let { return it }
+        val p = plain[verse] ?: return null
+        val r = range(verse) ?: return null
+        val sp = text.text as? Spanned ?: return null
+        val m = Marks.align(sp, r.first, r.last + 1, { i -> sp.getSpans(i, i + 1, VerseNumber::class.java).isNotEmpty() }, p)
+        maps[verse] = m
+        return m
+    }
+
+    /** Where a mark sits on the page, as start until end. */
+    private fun pageRange(m: Mark): IntRange? {
+        val r1 = range(m.v1) ?: return null
+        val r2 = range(m.v2) ?: return null
+        val len1 = plain[m.v1]?.length ?: 0
+        val len2 = plain[m.v2]?.length ?: 0
+        val s = if (m.c1 <= 0 || len1 == 0) r1.first else mapOf(m.v1)?.getOrNull(m.c1.coerceAtMost(len1 - 1)) ?: r1.first
+        val e = if (m.c2 < 0 || m.c2 >= len2 || len2 == 0) r2.last + 1 else (mapOf(m.v2)?.getOrNull((m.c2 - 1).coerceAtLeast(0))?.plus(1) ?: (r2.last + 1))
+        return if (e > s) s until e else null
+    }
+
+    /** Page offset to (verse, letter). [end] is true for the end of a range (one past the last letter). */
+    private fun toPlain(off: Int, end: Boolean): Pair<Int, Int>? {
+        if (verseStarts.isEmpty()) return null
+        var v = verseStarts.lastOrNull { it.second <= off }?.first ?: verseStarts.first().first
+        var r = range(v)
+        if (r != null && !end && off > r.last) {
+            // between verses (a verse number or a heading): the start moves to the next verse
+            val next = verseStarts.firstOrNull { it.second > off }?.first
+            if (next != null) { v = next; r = range(v) }
+            return v to 0
+        }
+        val len = plain[v]?.length ?: return v to 0
+        val map = mapOf(v) ?: return v to 0
+        if (r != null && off > r.last) return v to len
+        if (r != null && off <= r.first) return v to 0
+        return if (end) v to (Marks.plainIndex(map, off - 1) + 1).coerceIn(1, len)
+        else v to Marks.plainIndex(map, off).let { if (map[it] < off && it + 1 < len) it + 1 else it }
+    }
+
+    private fun fillColor(color: Int): Int {
+        val base = HighlightColors[color.coerceIn(HighlightColors.indices)].ui.toInt()
+        // A dark page needs a softer fill so white text stays easy to read.
+        val lightPage = android.graphics.Color.luminance(colors.text) < 0.5f
+        val a = if (lightPage) 0x70 else 0x5C
+        return (base and 0x00FFFFFF) or (a shl 24)
+    }
+
+    /** Draws the saved marks for this chapter. [open] gets pull handles. */
+    fun setMarks(list: List<Mark>, open: String?) {
+        if (dragging != 0) return
+        val key = Triple(list, open, shownKey)
+        if (key == marksKey) return
+        marksKey = key
+        marks = list
+        openId = open
+        drawMarks()
+    }
+
+    private fun drawMarks(live: IntRange? = null) {
+        val sp = text.text as? Spannable ?: return
+        markSpans.forEach { sp.removeSpan(it) }
+        markSpans.clear()
+        val notes = ArrayList<Pair<Int, String>>()
+        var pin: IntRange? = null
+        var pinColor = 0
+        for (m in marks.sortedBy { it.created }) {
+            val r = (if (m.id == openId && live != null) live else pageRange(m)) ?: continue
+            if (m.hasColor) {
+                val span = MarkSpan(text, r.first, r.last + 1, fillColor(m.color), MarkSpan.FILL)
+                sp.setSpan(span, r.first, r.last + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                markSpans += span
+            } else if (m.id == openId) {
+                val span = MarkSpan(text, r.first, r.last + 1, colors.underline, MarkSpan.DOTS)
+                sp.setSpan(span, r.first, r.last + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                markSpans += span
+            }
+            if (m.hasNote) notes += r.first to m.id
+            if (m.id == openId) {
+                pin = r
+                pinColor = if (m.hasColor) HighlightColors[m.color.coerceIn(HighlightColors.indices)].ui.toInt() else colors.text
+            }
+        }
+        text.notes = notes
+        text.noteColor = colors.muted
+        if (pin != null) text.setPins(pin.first, pin.last + 1, pinColor) else text.setPins(-1, -1, 0)
+        text.invalidate()
+    }
+
+    /** Scrolls so a highlight is on screen. */
+    fun revealMark(id: String) {
+        val m = marks.firstOrNull { it.id == id } ?: return
+        val r = pageRange(m) ?: return
+        post { keepInView(r.first) }
+    }
+
+    // ---------- pull handles ----------
+
+    private var dragging = 0
+    private var dragRange: IntRange? = null
+    private var grabDx = 0f
+    private var grabDy = 0f
+    private var fingerX = 0f
+    private var fingerY = 0f
+    private var magnifier: android.widget.Magnifier? = null
+    private var edgeSpeed = 0
+
+    private fun pinAt(x: Float, y: Float): Int {
+        val (a, b) = text.pins() ?: return 0
+        val px = x + scrollX - text.left
+        val py = y + scrollY - text.top
+        val reach = dp(30f)
+        fun dist(p: PageText.Pin): Float {
+            val dy = when {
+                py < minOf(p.knobY, p.top) -> minOf(p.knobY, p.top) - py
+                py > maxOf(p.knobY, p.bottom) -> py - maxOf(p.knobY, p.bottom)
+                else -> 0f
+            }
+            return kotlin.math.hypot(px - p.x, dy)
+        }
+        val da = dist(a)
+        val db = dist(b)
+        return when {
+            da > reach && db > reach -> 0
+            da <= db -> -1
+            else -> 1
+        }
+    }
+
+    private val slop = ViewConfiguration.get(context).scaledTouchSlop
+    private var downX = 0f
+    private var downY = 0f
+    private var downAt = 0L
+    private var downScroll = 0
+
+    // Taps are found here, above the scroll view, so they work however the touch is handled below.
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_DOWN -> { downX = ev.x; downY = ev.y; downAt = System.currentTimeMillis(); downScroll = scrollY; lastTouch = downAt }
+            MotionEvent.ACTION_MOVE -> lastTouch = System.currentTimeMillis()
+            MotionEvent.ACTION_UP -> {
+                lastTouch = System.currentTimeMillis()
+                val still = abs(ev.x - downX) < slop && abs(ev.y - downY) < slop && abs(scrollY - downScroll) < slop
+                if (still && dragging == 0 && lastTouch - downAt < 500) {
+                    val handled = super.dispatchTouchEvent(ev)
+                    tap(ev.x + scrollX - text.left, ev.y + scrollY - text.top)
+                    return handled
+                }
+            }
+        }
+        return super.dispatchTouchEvent(ev)
+    }
+
+    override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
+            val which = pinAt(ev.x, ev.y)
+            if (which != 0) { beginDrag(which, ev); return true }
+        }
+        return dragging != 0 || super.onInterceptTouchEvent(ev)
+    }
+
+    override fun onTouchEvent(ev: MotionEvent): Boolean {
+        if (dragging == 0) return super.onTouchEvent(ev)
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> { fingerX = ev.x; fingerY = ev.y; dragStep() }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> endDrag()
+        }
+        return true
+    }
+
+    private fun beginDrag(which: Int, ev: MotionEvent) {
+        val (a, b) = text.pins() ?: return
+        val p = if (which < 0) a else b
+        dragging = which
+        dragRange = text.pinFrom until text.pinTo
+        fingerX = ev.x
+        fingerY = ev.y
+        grabDx = p.x - (ev.x + scrollX - text.left)
+        grabDy = (p.top + p.bottom) / 2f - (ev.y + scrollY - text.top)
+        parent?.requestDisallowInterceptTouchEvent(true)
+        lastTouch = System.currentTimeMillis()
+        if (Build.VERSION.SDK_INT >= 28) magnifier = android.widget.Magnifier(text)
+        text.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+    }
+
+    private fun isWord(c: Char) = c.isLetterOrDigit() || c == '\'' || c == '’' || c == '-'
+
+    private fun skipped(i: Int): Boolean {
+        val sp = text.text as? Spanned ?: return false
+        return sp.getSpans(i, i + 1, VerseNumber::class.java).isNotEmpty()
+    }
+
+    /** Moves the held end to the word under the finger. The ends never cross, so one word always stays. */
+    private fun dragStep() {
+        val l = text.layout ?: return
+        val r = dragRange ?: return
+        val t = text.text
+        val tx = fingerX + scrollX - text.left + grabDx
+        val ty = fingerY + scrollY - text.top + grabDy
+        val line = l.getLineForVertical((ty - text.totalPaddingTop).toInt().coerceIn(0, l.height - 1))
+        var off = l.getOffsetForHorizontal(line, tx - text.totalPaddingLeft).coerceIn(0, t.length)
+        val next: IntRange
+        if (dragging < 0) {
+            while (off < t.length && (!isWord(t[off]) || skipped(off))) off++
+            while (off > 0 && isWord(t[off - 1]) && !skipped(off - 1)) off--
+            next = off.coerceAtMost(lastWordStart(r.last + 1))..r.last
+        } else {
+            while (off > 0 && (!isWord(t[off - 1]) || skipped(off - 1))) off--
+            while (off < t.length && isWord(t[off]) && !skipped(off)) off++
+            var e = off.coerceAtLeast(firstWordEnd(r.first))
+            // punctuation right after the word goes with it
+            while (e < t.length && t[e] in PUNCT && !skipped(e)) e++
+            next = r.first until e
+        }
+        if (next != r && !next.isEmpty()) {
+            dragRange = next
+            text.performHapticFeedback(
+                if (Build.VERSION.SDK_INT >= 27) android.view.HapticFeedbackConstants.TEXT_HANDLE_MOVE else android.view.HapticFeedbackConstants.CLOCK_TICK,
+            )
+            drawMarks(next)
+        }
+        text.pins()?.let { (a, b) ->
+            val p = if (dragging < 0) a else b
+            if (Build.VERSION.SDK_INT >= 28) magnifier?.show(p.x, (p.top + p.bottom) / 2f)
+        }
+        val edge = dp(56f)
+        val speed = when {
+            fingerY < edge -> -((edge - fingerY) / edge * dp(18f)).toInt().coerceAtLeast(1)
+            fingerY > height - edge -> ((fingerY - (height - edge)) / edge * dp(18f)).toInt().coerceAtLeast(1)
+            else -> 0
+        }
+        removeCallbacks(edgeScroll)
+        if (speed != 0) { edgeSpeed = speed; postOnAnimation(edgeScroll) }
+    }
+
+    private fun lastWordStart(end: Int): Int {
+        val t = text.text
+        var i = end
+        while (i > 0 && (!isWord(t[i - 1]) || skipped(i - 1))) i--
+        while (i > 0 && isWord(t[i - 1]) && !skipped(i - 1)) i--
+        return i
+    }
+
+    private fun firstWordEnd(start: Int): Int {
+        val t = text.text
+        var i = start
+        while (i < t.length && (!isWord(t[i]) || skipped(i))) i++
+        while (i < t.length && isWord(t[i]) && !skipped(i)) i++
+        return i
+    }
+
+    private val edgeScroll = Runnable {
+        if (dragging != 0) {
+            scrollBy(0, edgeSpeed)
+            dragStep()
+        }
+    }
+
+    private fun endDrag() {
+        removeCallbacks(edgeScroll)
+        if (Build.VERSION.SDK_INT >= 28) magnifier?.dismiss()
+        magnifier = null
+        val r = dragRange
+        val id = openId
+        dragging = 0
+        dragRange = null
+        lastTouch = System.currentTimeMillis()
+        if (r == null || id == null) return
+        val a = toPlain(r.first, false) ?: return
+        val b = toPlain(r.last + 1, true) ?: return
+        if (b.first < a.first || (b.first == a.first && b.second <= a.second)) { drawMarks(); return }
+        onResize(id, a.first, a.second, b.first, b.second)
+    }
+
     /** Scrolls so [verse] sits a third of the way down. */
     fun scrollToVerse(verse: Int, smooth: Boolean) {
         val s = verseStarts.firstOrNull { it.first == verse }?.second ?: return
@@ -357,10 +637,123 @@ class PageView(context: Context) : NestedScrollView(context) {
         val line = layout.getLineForVertical(ly)
         val off = layout.getOffsetForHorizontal(line, x - text.paddingLeft)
         val sp = text.text as? Spanned ?: return
+        text.noteAt(x, y)?.let { onNoteIconTap(it); return }
         sp.getSpans((off - 1).coerceAtLeast(0), off + 1, NoteSpan::class.java).firstOrNull()?.let { onNoteTap(it.note); return }
+        if (x >= text.paddingLeft && x <= text.width - text.paddingRight) {
+            val hit = marks.filter { it.hasColor || it.id == openId }.sortedByDescending { it.created }
+                .firstOrNull { m -> pageRange(m)?.let { off in it } == true }
+            if (hit != null) { onMarkTap(hit.id); return }
+        }
         val v = verseStarts.lastOrNull { it.second <= off + 1 }?.first ?: return
         val end = verseEnds[v] ?: return
         if (off <= end + 1) onVerseTap(v)
+    }
+}
+
+private const val PUNCT = ".,;:!?\u201D\u2019)\""
+
+/**
+ * The page text. On top of the text it draws the pull handles of the open highlight and a note
+ * icon in the right margin beside each verse with a note.
+ */
+class PageText(context: Context) : TextView(context) {
+    private val ink = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val dp = resources.displayMetrics.density
+    var pinFrom = -1
+        private set
+    var pinTo = -1
+        private set
+    private var pinColor = 0
+
+    /** (page offset, mark id) for each mark with a note. */
+    var notes: List<Pair<Int, String>> = emptyList()
+    var noteColor = 0
+
+    fun setPins(from: Int, to: Int, color: Int) {
+        if (from == pinFrom && to == pinTo && color == pinColor) return
+        pinFrom = from; pinTo = to; pinColor = color
+        invalidate()
+    }
+
+    class Pin(val x: Float, val top: Float, val bottom: Float, val knobY: Float)
+
+    /** The start knob sits above the text and the end knob below, so neither covers a word. */
+    fun pins(): Pair<Pin, Pin>? {
+        val l = layout ?: return null
+        if (pinFrom < 0 || pinTo <= pinFrom || pinTo > text.length) return null
+        val size = textSize
+        val left = totalPaddingLeft
+        val top = totalPaddingTop
+        val r = KNOB * dp
+        val l0 = l.getLineForOffset(pinFrom)
+        val b0 = l.getLineBaseline(l0).toFloat()
+        val x0 = l.getPrimaryHorizontal(pinFrom) - 2 * dp + left
+        val t0 = b0 - size * 0.84f + top
+        val start = Pin(x0, t0, b0 + size * 0.3f + top, t0 - r)
+        val l1 = l.getLineForOffset(pinTo - 1)
+        val b1 = l.getLineBaseline(l1).toFloat()
+        val x1 = (if (pinTo >= l.getLineVisibleEnd(l1)) l.getLineRight(l1) else l.getPrimaryHorizontal(pinTo)) + 2 * dp + left
+        val e1 = b1 + size * 0.3f + top
+        return start to Pin(x1, b1 - size * 0.84f + top, e1, e1 + r)
+    }
+
+    private fun drawPin(c: Canvas, p: Pin, knobAbove: Boolean) {
+        val r = KNOB * dp
+        ink.style = Paint.Style.FILL
+        ink.color = 0xCC000000.toInt()
+        c.drawRect(p.x - 2f * dp, p.top, p.x + 2f * dp, p.bottom, ink)
+        c.drawCircle(p.x, p.knobY, r + 1.5f * dp, ink)
+        ink.color = pinColor
+        c.drawRect(p.x - 1.25f * dp, if (knobAbove) p.knobY else p.top, p.x + 1.25f * dp, if (knobAbove) p.bottom else p.knobY, ink)
+        c.drawCircle(p.x, p.knobY, r, ink)
+    }
+
+    /** Centre of the note icon for a page offset. */
+    private fun noteCentre(off: Int): Pair<Float, Float>? {
+        val l = layout ?: return null
+        if (off > text.length) return null
+        val line = l.getLineForOffset(off)
+        val base = l.getLineBaseline(line) + totalPaddingTop
+        return (width - paddingRight / 2f) to (base - textSize * 0.32f)
+    }
+
+    /** The mark whose note icon is at (x, y), if any. */
+    fun noteAt(x: Float, y: Float): String? {
+        if (x < width - paddingRight - 4 * dp) return null
+        return notes.firstOrNull { (off, _) ->
+            val (_, cy) = noteCentre(off) ?: return@firstOrNull false
+            kotlin.math.abs(y - cy) < 22 * dp
+        }?.second
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        if (notes.isNotEmpty()) {
+            val seen = HashSet<Int>()
+            ink.color = noteColor
+            ink.strokeWidth = 1.6f * dp
+            for ((off, _) in notes) {
+                val l = layout ?: break
+                if (off > text.length || !seen.add(l.getLineForOffset(off))) continue
+                val (cx, cy) = noteCentre(off) ?: continue
+                // a small page with two lines of writing
+                val w = 6.5f * dp
+                val h = 8f * dp
+                ink.style = Paint.Style.STROKE
+                canvas.drawRoundRect(cx - w, cy - h, cx + w, cy + h, 2.5f * dp, 2.5f * dp, ink)
+                canvas.drawLine(cx - w + 3 * dp, cy - 2.5f * dp, cx + w - 3 * dp, cy - 2.5f * dp, ink)
+                canvas.drawLine(cx - w + 3 * dp, cy + 2.5f * dp, cx + w - 5 * dp, cy + 2.5f * dp, ink)
+            }
+        }
+        pins()?.let { (a, b) ->
+            drawPin(canvas, a, knobAbove = true)
+            drawPin(canvas, b, knobAbove = false)
+        }
+    }
+
+    companion object {
+        /** Radius of a pull handle's knob, in dp. */
+        const val KNOB = 9f
     }
 }
 
