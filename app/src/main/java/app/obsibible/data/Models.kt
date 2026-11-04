@@ -1,0 +1,44 @@
+package app.obsibible.data
+
+import kotlinx.serialization.Serializable
+
+/**
+ * Everything the user can set. Kept on the phone in settings.json.
+ * API keys live here too. The file is never backed up and never leaves the phone.
+ */
+@Serializable
+data class AppSettings(
+    // look
+    val appearance: String = "dark", // auto | light | dark | oled
+    val readerFontSize: Float = 21f,
+    val lineHeight: Float = 1.75f,
+    // reading
+    val bible: String = "BSB",
+    val lastRef: String = "JHN.1",
+    // online Bibles: one key per source, typed in by the user
+    val esvKey: String = "",
+    val youVersionKey: String = "",
+    val apiBibleKey: String = "",
+    // updates
+    val autoCheckUpdates: Boolean = true,
+    val updateRepo: String = "Virus7976/obsi-bible",
+    val updateToken: String = "",
+    val updateMirror: String = "",
+    val ignoredVersion: String = "",
+    val installMethod: String = "system", // system | shizuku | adb
+    val lastUpdateCheck: Long = 0L,
+)
+
+/**
+ * The marker colours. New colours go at the end, because saved highlights remember a colour by its place here.
+ */
+data class HighlightColor(val name: String, val ui: Long, val emoji: String)
+
+val HighlightColors = listOf(
+    HighlightColor("Yellow", 0xFFF2C14E, "🟡"),
+    HighlightColor("Red", 0xFFFF6B6B, "🔴"),
+    HighlightColor("Green", 0xFF5BD98C, "🟢"),
+    HighlightColor("Blue", 0xFF6AA8FF, "🔵"),
+    HighlightColor("Purple", 0xFFB58CFF, "🟣"),
+    HighlightColor("Orange", 0xFFF0A04B, "🟠"),
+)

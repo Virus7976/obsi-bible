@@ -1,0 +1,70 @@
+name: Release
+
+# Push a tag like v1.0.1 and GitHub builds the APK and publishes a release.
+# The description comes from docs/releases/<tag>.md. No personal token is used.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build, like v1.1.1'
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Check the description and version
+        run: |
+          test -s "docs/releases/${TAG}.md" || { echo "Missing docs/releases/${TAG}.md"; exit 1; }
+          grep -q "versionName = \"${TAG#v}\"" app/build.gradle.kts || { echo "versionName does not match the tag"; exit 1; }
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Android SDK pieces
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.1.0" > /dev/null
+
+      - name: Release key, if you added the secrets
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+            echo "Using your release key."
+          else
+            echo "No release key secret. Using the debug key."
+          fi
+
+      - name: Build
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleRelease --console=plain --no-daemon
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp app/build/outputs/apk/release/app-release.apk "ObsiBible-${TAG}.apk"
+          gh release create "$TAG" "ObsiBible-${TAG}.apk" \
+            --title "Obsi Bible ${TAG#v}" \
+            --notes-file "docs/releases/${TAG}.md"
