@@ -1,5 +1,17 @@
 package app.obsibible.ui
 
+import app.obsibible.obsidian.Sender
+import app.obsibible.obsidian.Clip
+import app.obsibible.data.Mark
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.material.icons.rounded.Diamond
+import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material3.IconButton
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.platform.LocalContext
+import android.widget.Toast
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -61,15 +73,31 @@ private val DailyVerses = listOf(
 )
 
 @Composable
-fun HomeTab(openRef: (Ref) -> Unit, openSearch: () -> Unit) {
+fun HomeTab(openRef: (Ref) -> Unit, openSearch: () -> Unit, openNotes: () -> Unit = {}) {
     val app = LocalApp.current
     val s by app.settings.state.collectAsState()
     val version by app.bibles.version.collectAsState()
+    val marks by app.marks.all.collectAsState()
+    val context = LocalContext.current
     val scheme = MaterialTheme.colorScheme
     val today = LocalDate.now()
     val vRef = Ref.fromKey(DailyVerses[(today.dayOfYear - 1) % DailyVerses.size])!!
     val vText = remember(vRef, s.bible, version) { app.bibles.verseText(s.bible, vRef) }
+    val info = remember(s.bible, version) { app.bibles.info(s.bible) }
+    val abbr = info?.abbreviation ?: s.bible
     val last = Ref.fromKey(s.lastRef) ?: Ref("JHN", 1)
+    val book = last.bookInfo
+    var sending by remember { mutableStateOf<Clip?>(null) }
+
+    // Newest first. One older mark comes back each day to read again.
+    val recent = remember(marks) { marks.sortedByDescending { it.updated }.take(3) }
+    val review = remember(marks, today) {
+        val old = marks.filter { it.created < System.currentTimeMillis() - 86_400_000L && it.id !in recent.map { r -> r.id } }.sortedBy { it.created }
+        if (old.isEmpty()) null else old[(today.toEpochDay() % old.size).toInt()]
+    }
+    val clips by produceState(emptyMap<String, Clip>(), recent, review, version) {
+        value = withContext(Dispatchers.IO) { (recent + listOfNotNull(review)).associate { it.id to clipFor(app, it) } }
+    }
 
     Column(Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
         Row(Modifier.fillMaxWidth().padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -78,26 +106,93 @@ fun HomeTab(openRef: (Ref) -> Unit, openSearch: () -> Unit) {
                 Icon(Icons.Rounded.Search, "Search", Modifier.size(24.dp))
             }
         }
-        Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large).background(scheme.surfaceContainer).clickable { openRef(vRef) }.padding(22.dp)) {
+
+        // keep reading
+        Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large).background(scheme.surfaceContainer).clickable { openRef(last.chapterRef) }.padding(22.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Keep reading", color = scheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
+                    Spacer(Modifier.height(6.dp))
+                    Text(last.chapterRef.label, style = MaterialTheme.typography.headlineSmall)
+                    Spacer(Modifier.height(2.dp))
+                    Text("Chapter ${last.chapter} of ${book.chapters} · $abbr", color = scheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+                }
+                PlayCircle { app.audio.play(s.bible, last.chapterRef); openRef(last.chapterRef) }
+            }
+            Spacer(Modifier.height(16.dp))
+            LinearProgressIndicator(
+                progress = { last.chapter / book.chapters.coerceAtLeast(1).toFloat() },
+                Modifier.fillMaxWidth().height(4.dp).clip(CircleShape),
+                color = scheme.onSurface, trackColor = scheme.surfaceContainerHighest, drawStopIndicator = {},
+            )
+        }
+
+        // verse of the day
+        Spacer(Modifier.height(16.dp))
+        Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large).background(scheme.surfaceContainer).clickable { openRef(vRef) }.padding(start = 22.dp, end = 22.dp, top = 22.dp, bottom = 8.dp)) {
             Text("Verse of the day", color = scheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
             Spacer(Modifier.height(14.dp))
             Text(vText ?: "…", fontFamily = SerifFont, fontSize = 24.sp, lineHeight = 36.sp)
             Spacer(Modifier.height(16.dp))
-            Text("${vRef.label} ${s.bible}", style = MaterialTheme.typography.titleMedium)
-        }
-        Spacer(Modifier.height(16.dp))
-        Row(
-            Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large).background(scheme.surfaceContainer).clickable { openRef(last.chapterRef) }.padding(22.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text("Keep reading", color = scheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
-                Spacer(Modifier.height(6.dp))
-                Text(last.chapterRef.label, style = MaterialTheme.typography.headlineSmall)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("${vRef.label} $abbr", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                val shareLine = "${vText.orEmpty()}\n${vRef.label} $abbr"
+                IconButton(onClick = {
+                    Sender.copy(context, shareLine)
+                    Toast.makeText(context, "Copied the verse.", Toast.LENGTH_SHORT).show()
+                }) { Icon(Icons.Rounded.ContentCopy, "Copy", Modifier.size(22.dp)) }
+                IconButton(onClick = {
+                    val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, shareLine)
+                    context.startActivity(Intent.createChooser(send, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                }) { Icon(Icons.Rounded.Share, "Share", Modifier.size(22.dp)) }
+                IconButton(onClick = {
+                    sending = Clip(vRef, abbr, info?.name ?: abbr, vText.orEmpty(), copyright = info?.copyright.orEmpty())
+                }) { Icon(Icons.Rounded.Diamond, "Send to Obsidian", Modifier.size(22.dp)) }
             }
-            PlayCircle { app.audio.play(s.bible, last.chapterRef); openRef(last.chapterRef) }
+        }
+
+        // read again
+        review?.let { m ->
+            Spacer(Modifier.height(28.dp))
+            Text("Read again", style = MaterialTheme.typography.titleLarge)
+            Spacer(Modifier.height(4.dp))
+            Text("One of your highlights, a new one each day.", color = scheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+            Spacer(Modifier.height(12.dp))
+            HomeMark(m, clips[m.id], abbr = clips[m.id]?.translation ?: m.bible) { openRef(m.ref) }
+        }
+
+        // recent
+        if (recent.isNotEmpty()) {
+            Spacer(Modifier.height(28.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Recent", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                Text("See all", Modifier.clip(CircleShape).clickable(onClick = openNotes).padding(horizontal = 10.dp, vertical = 6.dp), style = MaterialTheme.typography.labelLarge)
+            }
+            Spacer(Modifier.height(12.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                recent.forEach { m -> HomeMark(m, clips[m.id], abbr = clips[m.id]?.translation ?: m.bible) { openRef(m.ref) } }
+            }
+        } else {
+            Spacer(Modifier.height(28.dp))
+            Text("Hold a verse in the Bible tab to highlight it or add a note. Your newest ones show here.", color = scheme.onSurfaceVariant)
         }
         Spacer(Modifier.height(24.dp))
+    }
+    sending?.let { c -> ClipSheet(c, -1, onSent = { sending = null }, onDismiss = { sending = null }) }
+}
+
+/** A highlight or note on the Home tab: the words, the reference, and the note under it. */
+@Composable
+private fun HomeMark(m: Mark, clip: Clip?, abbr: String, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large).background(scheme.surfaceContainer).clickable(onClick = onClick).padding(18.dp)) {
+        Text("${m.label} $abbr", style = MaterialTheme.typography.titleSmall, color = scheme.onSurfaceVariant)
+        Spacer(Modifier.height(10.dp))
+        QuoteCard(clip?.text ?: m.quote.ifBlank { "…" }, if (m.hasColor) m.color else -1, maxLines = 4)
+        if (m.hasNote) {
+            Spacer(Modifier.height(10.dp))
+            Text(m.note, maxLines = 3, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
+        }
     }
 }
 

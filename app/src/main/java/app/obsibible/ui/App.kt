@@ -241,7 +241,7 @@ private fun Tabs(tab: Tab, onTab: (Tab) -> Unit, push: (Screen) -> Unit, openRef
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when (tab) {
-                Tab.Home -> HomeTab(openRef = openRef, openSearch = { onTab(Tab.Search) })
+                Tab.Home -> HomeTab(openRef = openRef, openSearch = { onTab(Tab.Search) }, openNotes = { onTab(Tab.Notes) })
                 Tab.Bible -> BibleTab(openSearch = { push(Screen.Search) }, openVersions = { push(Screen.Versions) }, onBack = { onTab(Tab.Home) })
                 Tab.Search -> SearchScreen(onOpen = openRef, onBack = null, autofocus = false)
                 Tab.You -> YouTab(openSettings = { push(Screen.Settings) }, openRef = openRef)
