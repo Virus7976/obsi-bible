@@ -1,5 +1,13 @@
 package app.obsibible.ui
 
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.Key
+import androidx.compose.material.icons.rounded.Add
+import app.obsibible.bible.SearchFilters
+import app.obsibible.bible.Places
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -88,6 +96,7 @@ fun SearchScreen(onOpen: (Ref) -> Unit, onBack: (() -> Unit)?, autofocus: Boolea
     var field by remember { mutableStateOf(TextFieldValue("")) }
     val q = field.text
     var where by remember { mutableStateOf(Scope.All) }
+    var filters by remember { mutableStateOf(SearchFilters()) }
     var results by remember { mutableStateOf(Found(0, emptyList())) }
     val allMarks by app.marks.all.collectAsState()
     val installed by app.bibles.installed.collectAsState()
@@ -103,25 +112,40 @@ fun SearchScreen(onOpen: (Ref) -> Unit, onBack: (() -> Unit)?, autofocus: Boolea
         val letters = q.trim().replace(Regex("\\s*\\d+([:. ]\\d+)?(-\\d+)?\\s*$"), "")
         if (letters.isBlank()) emptyList() else Books.match(letters).take(4)
     }
-    val wordsQuery = q.trim().length >= 2 && Bibles.matchQuery(q) != null && !(parsed?.chapterGiven == true && books.isNotEmpty())
+    // Filters add up: the words in them and the words typed now must all be in the verse.
+    val full = filters.query(q)
+    val wordsQuery = full.length >= 2 && Bibles.matchQuery(full) != null && !(filters.isEmpty && parsed?.chapterGiven == true && books.isNotEmpty())
+    val placeIdeas = remember(q) { Places.suggest(q) }
+    val wordIdea = q.trim().takeIf { it.length >= 2 && !it.startsWith("#") && asReference(it) == null && Bibles.matchQuery(it) != null && placeIdeas.none { p -> p.name.equals(it, true) } }
     // your own highlights and notes; "#tag" finds by tag
-    val mine = remember(q, allMarks) {
+    val mine = remember(q, allMarks, filters) {
         val t = q.trim()
         when {
-            t.length < 2 -> emptyList()
+            t.length < 2 && filters.words.isEmpty() -> emptyList()
             t.startsWith("#") -> allMarks.filter { m -> m.tags.any { it.startsWith(t.drop(1), true) } }.sortedByDescending { it.updated }
-            else -> Fuzzy.filter(t, allMarks.filter { it.hasColor || it.hasNote }) { NoteLinks.plain(it.note) + " " + it.quote + " " + it.tags.joinToString(" ") { "#$it" } + " " + it.label }
+            // every word typed must start a word in the note, quote, tags or reference; letters
+            // scattered across a long quote are not a match
+            else -> {
+                val want = Bibles.normalize(filters.query(t)).split(' ').filter { it.isNotBlank() }
+                val inBooks = filters.books
+                allMarks.filter { m ->
+                    (m.hasColor || m.hasNote) && (inBooks == null || m.book in inBooks) && run {
+                        val have = Bibles.normalize(NoteLinks.plain(m.note) + " " + m.quote + " " + m.tags.joinToString(" ") + " " + m.label).split(' ')
+                        want.all { w -> have.any { it.startsWith(w) } }
+                    }
+                }.sortedByDescending { it.updated }
+            }
         }.take(6)
     }
     val recent = remember(q, s.recentSearches) {
         if (q.isBlank()) s.recentSearches else Fuzzy.filter(q, s.recentSearches) { it }.take(8)
     }
 
-    LaunchedEffect(q, where, bibleVersion) {
+    LaunchedEffect(full, where, filters, bibleVersion) {
         if (!wordsQuery) { results = Found(0, emptyList()); return@LaunchedEffect }
         delay(180)
         searching = true
-        results = withContext(Dispatchers.IO) { app.bibles.search(s.bible, q, where, currentBook) }
+        results = withContext(Dispatchers.IO) { app.bibles.search(s.bible, full, where, currentBook, books = filters.books) }
         searching = false
     }
     LaunchedEffect(Unit) { if (autofocus) { delay(150); runCatching { focus.requestFocus() } } }
@@ -151,13 +175,30 @@ fun SearchScreen(onOpen: (Ref) -> Unit, onBack: (() -> Unit)?, autofocus: Boolea
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                     keyboardActions = KeyboardActions(onSearch = {
                         val p = parsed
-                        if (p != null && (p.chapterGiven || books.size == 1)) open(p.ref) else { remember(q); keyboard?.hide() }
+                        if (filters.isEmpty && p != null && (p.chapterGiven || books.size == 1)) open(p.ref) else { remember(full); keyboard?.hide() }
                     }),
-                    modifier = Modifier.fillMaxWidth().focusRequester(focus),
+                    // Backspace in an empty box takes off the last filter.
+                    modifier = Modifier.fillMaxWidth().focusRequester(focus).onPreviewKeyEvent { e ->
+                        if (e.type == KeyEventType.KeyDown && e.key == Key.Backspace && q.isEmpty() && !filters.isEmpty) { filters = filters.dropLast(); true } else false
+                    },
                 )
             }
             if (q.isNotEmpty()) IconButton(onClick = { field = TextFieldValue("") }) { Icon(Icons.Rounded.Close, "Clear", Modifier.size(28.dp)) }
             else Spacer(Modifier.size(48.dp))
+        }
+        // the filters in use, and what is typed now as a new filter
+        if (!filters.isEmpty || placeIdeas.isNotEmpty() || wordIdea != null) {
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically,
+            ) {
+                filters.places.forEach { pl -> FilterChip(pl.name, on = true) { filters = filters.copy(places = filters.places - pl) } }
+                filters.words.forEach { w -> FilterChip("\u201C$w\u201D", on = true) { filters = filters.copy(words = filters.words - w) } }
+                placeIdeas.filter { pl -> filters.places.none { it.name == pl.name } }.forEach { pl ->
+                    FilterChip("Only in ${pl.name}", on = false) { filters = filters.add(pl); field = TextFieldValue("") }
+                }
+                wordIdea?.let { w -> FilterChip("Keep \u201C$w\u201D", on = false) { filters = filters.add(w); field = TextFieldValue("") } }
+            }
         }
         HorizontalDivider(color = scheme.outlineVariant)
 
@@ -216,7 +257,7 @@ fun SearchScreen(onOpen: (Ref) -> Unit, onBack: (() -> Unit)?, autofocus: Boolea
                             else -> null
                         }
                         if (note != null) Text(note, Modifier.padding(horizontal = 20.dp, vertical = 4.dp), color = scheme.onSurfaceVariant, fontSize = 15.sp)
-                        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (filters.places.isEmpty()) Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Scope.entries.forEach { sc ->
                                 val label = if (sc == Scope.Book) Books.get(currentBook ?: "")?.name ?: "This book" else sc.label
                                 ScopeChip(label, sc == where) { where = sc }
@@ -227,13 +268,17 @@ fun SearchScreen(onOpen: (Ref) -> Unit, onBack: (() -> Unit)?, autofocus: Boolea
                 if (!searching && results.hits.isEmpty()) item(key = "none") {
                     Text("No verses have these words.", Modifier.padding(horizontal = 20.dp, vertical = 8.dp), color = scheme.onSurfaceVariant)
                 }
-                items(results.hits, key = { "hit-${it.ref.key}" }) { h -> HitRow(h, results.fixed ?: q) { open(h.ref) } }
+                items(results.hits, key = { "hit-${it.ref.key}" }) { h -> HitRow(h, results.fixed ?: full) { open(h.ref, full) } }
                 if (results.total > results.hits.size) item(key = "more") {
                     Text("Showing the best ${results.hits.size}. Add a word to narrow it down.", Modifier.padding(20.dp), color = scheme.onSurfaceVariant, fontSize = 14.sp)
                 }
             }
+            // only places picked: say what to do next
+            if (q.isBlank() && filters.words.isEmpty() && filters.places.isNotEmpty()) item(key = "filter-hint") {
+                Text("Type a word to search in ${filters.places.joinToString(", ") { it.name }}.", Modifier.padding(20.dp), color = scheme.onSurfaceVariant)
+            }
             // nothing typed: every book, to go to a chapter
-            if (q.isBlank()) {
+            if (q.isBlank() && filters.isEmpty) {
                 item(key = "books-label") { SectionTitle("Books") }
                 items(Books.all, key = { "all-${it.id}" }) { b ->
                     Column(Modifier.fillMaxWidth().animateContentSize()) {
@@ -309,6 +354,21 @@ private fun RecentRow(text: String, onClick: () -> Unit, onFill: () -> Unit) {
         }
         Text(text, Modifier.weight(1f).padding(start = 16.dp), fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         IconButton(onClick = onFill) { Icon(Icons.Rounded.NorthWest, "Put in the search box", Modifier.size(24.dp)) }
+    }
+}
+
+/** A filter in use (with a close mark), or a suggested one (with a plus). */
+@Composable
+private fun FilterChip(label: String, on: Boolean, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        Modifier.clip(CircleShape).background(if (on) scheme.onSurface else scheme.surfaceContainer)
+            .clickable(onClick = onClick).padding(start = 12.dp, end = 14.dp, top = 8.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(if (on) Icons.Rounded.Close else Icons.Rounded.Add, if (on) "Remove" else "Add", Modifier.size(18.dp), tint = if (on) scheme.surface else scheme.onSurface)
+        Spacer(Modifier.width(6.dp))
+        Text(label, color = if (on) scheme.surface else scheme.onSurface, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 

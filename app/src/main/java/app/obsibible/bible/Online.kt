@@ -79,7 +79,7 @@ object EsvApi {
             if (raw.isBlank()) continue
             val indent = raw.length - raw.trimStart().length
             val line = raw.trim()
-            val hasVerse = Regex("\\[\\d+\\]").containsMatchIn(line)
+            val hasVerse = EsvApi.VERSE_MARK.containsMatchIn(line)
             val kind = when {
                 indent == 0 && !hasVerse -> "s1"
                 indent >= 8 -> "q2"
@@ -91,13 +91,16 @@ object EsvApi {
         return Chapter(ref.book, ref.chapter, blocks)
     }
 
+    /** A verse number such as [16], or a group such as [1-4] (The Message prints verses in groups). */
+    internal val VERSE_MARK = Regex("\\[(\\d+(?:[-\u2013]\\d+)?)\\]\\s*")
+
     /** Splits "[16] For God so loved [17] For God did not" into verse marks and text. */
     internal fun segs(line: String): List<Seg> {
         val out = ArrayList<Seg>()
         var last = 0
-        for (m in Regex("\\[(\\d+)\\]\\s*").findAll(line)) {
+        for (m in VERSE_MARK.findAll(line)) {
             if (m.range.first > last) out += Seg(Seg.TEXT, line.substring(last, m.range.first))
-            out += Seg(Seg.VERSE, m.groupValues[1])
+            out += Seg(Seg.VERSE, m.groupValues[1].replace('\u2013', '-'))
             last = m.range.last + 1
         }
         if (last < line.length) out += Seg(Seg.TEXT, line.substring(last))
@@ -173,7 +176,7 @@ object ApiBible {
         for (raw in text.replace("\r", "").split('\n')) {
             val line = raw.trim()
             if (line.isEmpty()) continue
-            val hasVerse = Regex("\\[\\d+\\]").containsMatchIn(line)
+            val hasVerse = EsvApi.VERSE_MARK.containsMatchIn(line)
             if (!hasVerse && line.length < 90 && !line.endsWith('.') && !line.endsWith(',') && blocks.lastOrNull()?.kind != "s1")
                 blocks += Block("s1", listOf(Seg(Seg.TEXT, line)))
             else blocks += Block("p", EsvApi.segs(line))

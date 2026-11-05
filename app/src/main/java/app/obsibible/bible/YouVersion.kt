@@ -140,8 +140,13 @@ object YouVersion {
                 if (skip) continue
                 if (label) {
                     // Without data-usfm, the label itself is the verse mark.
-                    val n = raw.trim().takeWhile { it.isDigit() }
-                    if (!hasUsfm && n.isNotEmpty() && kind != "s1") { val v = n.toInt(); if (v != verse) { verse = v; segs += Seg(Seg.VERSE, n) } }
+                    // "1-4" is a group of verses printed as one (The Message does this).
+                    val g = Regex("^(\\d+)(?:\\s*[-\u2013]\\s*(\\d+))?").find(raw.trim())
+                    if (!hasUsfm && g != null && kind != "s1") {
+                        val v = g.groupValues[1].toInt()
+                        val z = g.groupValues[2].toIntOrNull() ?: v
+                        if (v != verse) { verse = v; segs += Seg(Seg.VERSE, if (z > v) "$v-$z" else "$v") }
+                    }
                     continue
                 }
                 text(raw)
@@ -167,8 +172,11 @@ object YouVersion {
             val block = k != null && (name != "span")
             if (block) { flush(); kind = k!! }
             if (name == "span" && k == "s1") { flush(); kind = "s1" }
-            usfmAttr.find(attrs)?.groupValues?.get(1)?.split('+')?.firstOrNull()?.split('.')?.getOrNull(2)?.toIntOrNull()?.let { v ->
-                if (v != verse && kind != "s1") { verse = v; segs += Seg(Seg.VERSE, v.toString()) }
+            usfmAttr.find(attrs)?.groupValues?.get(1)?.split('+')?.mapNotNull { it.split('.').getOrNull(2)?.toIntOrNull() }?.takeIf { it.isNotEmpty() }?.let { vs ->
+                // MRK.3.1+MRK.3.2+MRK.3.3 is one group of verses printed as one.
+                val v = vs.first()
+                val z = vs.max()
+                if (v != verse && kind != "s1") { verse = v; segs += Seg(Seg.VERSE, if (z > v) "$v-$z" else "$v") }
             }
             if (name !in voidTags && !attrs.trimEnd().endsWith("/")) stack += Open(name, skip, label, block || (name == "span" && k == "s1"))
             if (name == "br") text(" ")

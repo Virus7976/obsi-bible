@@ -189,7 +189,10 @@ fun BibleTab(openSearch: () -> Unit, openVersions: () -> Unit, onBack: () -> Uni
                         update = { v ->
                             v.onVerseTap = { verse ->
                                 if (openMark != null) openMark = null
-                                else selected = if (verse in selected) selected - verse else selected + verse
+                                else {
+                                    val g = v.group(verse) // a group such as 1-4 is picked as one
+                                    selected = if (verse in selected) selected - g else selected + g
+                                }
                             }
                             v.onNoteTap = { note = it }
                             v.credit = credit.first

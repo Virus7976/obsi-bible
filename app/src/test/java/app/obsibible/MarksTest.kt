@@ -68,6 +68,12 @@ class MarksTest {
         assertTrue(list.none { it.id == plain.id })
     }
 
+    @Test fun messageVerseGroupsAreRead() {
+        val ch = app.obsibible.bible.ApiBible.parse(app.obsibible.bible.Ref("MRK", 3), "[1-4] Then he went back in. [5] He looked.\n[6\u20138] More.")
+        assertEquals(mapOf(1 to 1..4, 6 to 6..8), ch.groups())
+        assertEquals(listOf(1, 5, 6), ch.verses().map { it.first })
+    }
+
     @Test fun eraseKeepsTheNoteOnly() {
         val noted = mark(17, 0, 17, -1, color = 2, note = "keep")
         val plain = mark(18, 0, 18, -1, color = 1)

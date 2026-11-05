@@ -118,6 +118,7 @@ class PageView(context: Context) : NestedScrollView(context) {
         follow = null; word = null; selected.clear(); followKey = null
         if (away) { away = false; onAway(false) }
         plain = chapter.verses().toMap()
+        groups = chapter.groups()
         maps.clear(); markSpans.clear(); marksKey = null
         text.setPins(-1, -1, 0); text.notes = emptyList()
         text.setText(built.text, TextView.BufferType.SPANNABLE)
@@ -273,9 +274,18 @@ class PageView(context: Context) : NestedScrollView(context) {
 
     // ---------- marks ----------
 
+    private var groups: Map<Int, IntRange> = emptyMap()
+
+    /** The verse number printed on the page for [verse]: itself, or the first verse of its group. */
+    private fun head(verse: Int) = if (verseEnds.containsKey(verse)) verse else groups.entries.firstOrNull { verse in it.value }?.key ?: verse
+
+    /** All verses printed together with [verse], such as 1..4 for "1-4". */
+    fun group(verse: Int): IntRange = groups[head(verse)] ?: verse..verse
+
     private fun range(verse: Int): IntRange? {
-        val s = verseStarts.firstOrNull { it.first == verse }?.second ?: return null
-        val e = verseEnds[verse] ?: return null
+        val h = head(verse)
+        val s = verseStarts.firstOrNull { it.first == h }?.second ?: return null
+        val e = verseEnds[h] ?: return null
         val t = text.text
         var a = s
         var b = e
@@ -337,6 +347,7 @@ class PageView(context: Context) : NestedScrollView(context) {
         val sp = text.text as? Spannable ?: return
         for ((v, s) in selected.entries.toList()) if (v !in verses) { sp.removeSpan(s); selected.remove(v) }
         for (v in verses) if (v !in selected) {
+            if (head(v) != v && head(v) in verses) continue // one line under a group of verses, not four
             val r = range(v) ?: continue
             val s = MarkSpan(text, r.first, r.last + 1, colors.underline, MarkSpan.DOTS)
             sp.setSpan(s, r.first, r.last + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)

@@ -228,16 +228,19 @@ class Bibles(private val context: Context) {
      * Word search, best match first. A typo is fixed by itself ([Found.fixed]). When no verse has
      * every word, verses with most of the words are shown ([Found.partial]).
      */
-    fun search(id: String, query: String, where: Scope, book: String?, limit: Int = 300): Found {
+    fun search(id: String, query: String, where: Scope, book: String?, limit: Int = 300, books: Set<String>? = null): Found {
         if (isOnline(id)) {
             val k = keys()
-            return runCatching {
+            val found = runCatching {
                 when {
                     id == EsvApi.ID -> EsvApi.search(k.esv, query)
                     id.startsWith(ApiBible.PREFIX) -> ApiBible.search(k.apiBible, id.removePrefix(ApiBible.PREFIX), query)
                     else -> Found(0, emptyList()) // YouVersion has no word search
                 }
             }.getOrElse { Found(0, emptyList()) }
+            if (books == null) return found
+            val kept = found.hits.filter { it.ref.book in books }
+            return found.copy(total = kept.size, hits = kept)
         }
         val db = db(id) ?: return Found(0, emptyList())
         val (lo, hi) = range(where, book)
@@ -247,7 +250,9 @@ class Bibles(private val context: Context) {
 
         fun run(match: String, words: List<String>, cap: Int): Pair<Int, List<Hit>> {
             // The range goes into the SQL as numbers: a bound "?" is text, and in SQLite text never equals a number.
-            val cond = "verses MATCH ? AND ord BETWEEN $lo AND $hi"
+            // Book ids are fixed codes such as JHN, so they go into the SQL as they are.
+            val inBooks = books?.filter { b -> b.all { it.isLetterOrDigit() } }?.joinToString(",") { "'$it'" }
+            val cond = "verses MATCH ? AND ord BETWEEN $lo AND $hi" + if (inBooks != null) " AND book IN ($inBooks)" else ""
             val total = db.rawQuery("SELECT count(*) FROM verses WHERE $cond", arrayOf(match)).use { c -> if (c.moveToFirst()) c.getInt(0) else 0 }
             if (total == 0) return 0 to emptyList()
             val rows = ArrayList<Triple<Hit, Int, Long>>()

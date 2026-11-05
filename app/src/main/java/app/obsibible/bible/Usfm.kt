@@ -24,6 +24,20 @@ data class Chapter(val book: String, val number: Int, val blocks: List<Block>) {
         }
         return out.map { (k, sb) -> k to sb.toString().replace(Regex("\\s+"), " ").trim() }
     }
+
+    /**
+     * Verses printed as one, such as "1-4" in The Message. Key is the first verse.
+     * A highlight on verse 3 in another Bible shows on the whole group here.
+     */
+    fun groups(): Map<Int, IntRange> {
+        val out = HashMap<Int, IntRange>()
+        for (b in blocks) for (s in b.segs) if (s.t == Seg.VERSE && '-' in s.s) {
+            val a = s.s.substringBefore('-').toIntOrNull() ?: continue
+            val z = s.s.substringAfter('-').toIntOrNull() ?: continue
+            if (z > a) out[a] = a..z
+        }
+        return out
+    }
 }
 
 /**
