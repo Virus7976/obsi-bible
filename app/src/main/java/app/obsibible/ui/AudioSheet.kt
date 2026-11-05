@@ -1,5 +1,6 @@
 package app.obsibible.ui
 
+import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -138,6 +139,17 @@ fun AudioSheet(idleTitle: String, onStart: () -> Unit, onDismiss: () -> Unit) {
                     speedLabel(u.speed), fontSize = 20.sp, fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.clickable { engine.setSpeed(Speeds[(Speeds.indexOf(u.speed) + 1).mod(Speeds.size)]) }.padding(8.dp),
                 )
+                Spacer(Modifier.weight(1f))
+                // A clear button for the voice list, so the choice is easy to find.
+                Row(
+                    Modifier.clip(androidx.compose.foundation.shape.CircleShape).background(scheme.surfaceContainerHighest)
+                        .clickable { voices = true }.padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Rounded.RecordVoiceOver, null, Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Voice", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                }
                 Spacer(Modifier.weight(1f))
                 if (u.sleepMinutes != 0) Text(
                     if (u.sleepMinutes == SLEEP_END_OF_CHAPTER) "End of chapter" else Timings.clock(u.sleepLeft / 1000.0),

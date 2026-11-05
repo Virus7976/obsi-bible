@@ -325,23 +325,52 @@ class Bibles(private val context: Context) {
     }
 
     /** Installs a zip of USFM files (one per book). Writes to a temp file, then swaps it in. */
-    fun installZip(input: InputStream, info: BibleInfo) {
+    fun installZip(input: InputStream, info: BibleInfo) = write(info) { add ->
+        var done = 0
+        ZipInputStream(input.buffered()).use { zip ->
+            while (true) {
+                val e = zip.nextEntry ?: break
+                if (e.isDirectory || !(e.name.endsWith(".usfm", true) || e.name.endsWith(".sfm", true))) continue
+                val text = zip.readBytes().toString(Charsets.UTF_8)
+                for (ch in Usfm.parse(text)) add(ch)
+                done++
+                _install.value = InstallState.Working(info.name, done, 66)
+            }
+        }
+        done
+    }
+
+    /**
+     * Installs a Bible from an EPUB. The book has no Bible markup, so [Epub] guesses books,
+     * chapters and verses from headings and verse numbers. Returns how many chapters it found.
+     */
+    fun installEpub(input: InputStream, info: BibleInfo): Int {
+        _install.value = InstallState.Working(info.name, 0, 66)
+        val book = Epub.read(input)
+        val chapters = Epub.parse(book.pages)
+        if (chapters.isEmpty()) error("No Bible chapters were found in that EPUB.")
+        write(info.copy(name = info.name.ifBlank { book.title })) { add ->
+            var lastBook = ""
+            var books = 0
+            for (ch in chapters) {
+                add(ch)
+                if (ch.book != lastBook) { lastBook = ch.book; books++; _install.value = InstallState.Working(info.name, books, 66) }
+            }
+            books
+        }
+        return chapters.size
+    }
+
+    private fun write(info: BibleInfo, fill: (add: (Chapter) -> Unit) -> Int) {
         _install.value = InstallState.Working(info.name, 0, 66)
         val tmp = File(dir, "${info.id}.db.tmp").apply { delete() }
         val db = SQLiteDatabase.openOrCreateDatabase(tmp, null)
         try {
             createTables(db)
             db.beginTransaction()
-            var done = 0
-            ZipInputStream(input.buffered()).use { zip ->
-                while (true) {
-                    val e = zip.nextEntry ?: break
-                    if (e.isDirectory || !(e.name.endsWith(".usfm", true) || e.name.endsWith(".sfm", true))) continue
-                    val text = zip.readBytes().toString(Charsets.UTF_8)
-                    for (ch in Usfm.parse(text)) addChapter(db, ch)
-                    done++
-                    _install.value = InstallState.Working(info.name, done, 66)
-                }
+            val done = try { fill { ch -> addChapter(db, ch) } } catch (e: Throwable) {
+                _install.value = InstallState.Idle // a bad file must not leave the progress bar up
+                throw e
             }
             if (done == 0) error("That file has no Bible books in it.")
             for ((k, v) in mapOf("id" to info.id, "abbreviation" to info.abbreviation, "name" to info.name, "copyright" to info.copyright, "done" to "1")) {
@@ -351,6 +380,7 @@ class Bibles(private val context: Context) {
         } finally {
             if (db.inTransaction()) db.endTransaction()
             db.close()
+            if (_install.value is InstallState.Idle) tmp.delete()
         }
         synchronized(this) { open.remove(info.id)?.close() }
         val target = File(dir, "${info.id}.db")

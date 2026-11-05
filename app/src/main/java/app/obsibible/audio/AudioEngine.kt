@@ -177,7 +177,11 @@ class AudioEngine(private val app: ObsiBibleApp) {
         timesEstimated = false
         pendingVerse = fromVerse
         val chRef = ref.chapterRef
-        val meta = MediaMetadata.Builder().setTitle(chRef.label).setArtist(voiceName(src)).setAlbumTitle(bibleName(bible)).build()
+        // The notification: "Mark 3", then "ESV · Crossway recording", with a cover drawn for the chapter.
+        val abbr = app.bibles.installed.value.firstOrNull { it.id == bible }?.abbreviation ?: bible
+        val meta = MediaMetadata.Builder().setTitle(chRef.label).setArtist(listOf(abbr, voiceName(src)).filter { it.isNotBlank() }.joinToString(" \u00B7 "))
+            .setAlbumTitle(bibleName(bible)).setDisplayTitle(chRef.label)
+            .setArtworkData(Cover.png(chRef), MediaMetadata.PICTURE_TYPE_FRONT_COVER).build()
 
         when (src) {
             is Source.Recorded -> {
@@ -190,7 +194,7 @@ class AudioEngine(private val app: ObsiBibleApp) {
                     val key = "${chRef.key}.$v"
                     lines[key] = Line(v, text, src)
                     MediaItem.Builder().setUri(Uri.parse("voice://line/$key")).setMediaId(key)
-                        .setMediaMetadata(meta.buildUpon().setTitle("${chRef.label}:$v").build()).build()
+                        .setMediaMetadata(meta.buildUpon().setTitle("${chRef.label}:$v").setDisplayTitle("${chRef.label}:$v").build()).build()
                 }
                 val start = verses.indexOfFirst { it.first >= fromVerse }.coerceAtLeast(0)
                 player.setMediaItems(items, start, 0L)
@@ -271,6 +275,8 @@ class AudioEngine(private val app: ObsiBibleApp) {
 
     fun nextVerse() = stepVerse(+1)
     fun previousVerse() = stepVerse(-1)
+    fun nextChapter() { val u = _ui.value; if (u.active) u.ref?.next()?.let { play(u.bible, it) } }
+    fun previousChapter() { val u = _ui.value; if (u.active) u.ref?.previous()?.let { play(u.bible, it) } }
 
     private fun stepVerse(d: Int) {
         val u = _ui.value

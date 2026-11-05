@@ -56,6 +56,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.obsibible.audio.Narrators
 import app.obsibible.bible.BibleInfo
+import app.obsibible.bible.Epub
 import app.obsibible.bible.InstallState
 import app.obsibible.bible.Ref
 import app.obsibible.bible.Usfm
@@ -217,10 +218,20 @@ fun VersionsScreen(onBack: () -> Unit, openSetup: () -> Unit = {}) {
                         val i = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
                         if (c.moveToFirst() && i >= 0) c.getString(i) else null
                     } ?: "Bible.zip"
-                    val id = name.substringBefore('_').substringBefore('.').uppercase().filter { it.isLetterOrDigit() }.take(12).ifBlank { "MINE" }
-                    val title = context.contentResolver.openInputStream(uri)!!.use { firstTitle(it) } ?: id
-                    context.contentResolver.openInputStream(uri)!!.use { app.bibles.installZip(it, BibleInfo(id, id, title, "")) }
-                    id
+                    val isEpub = name.endsWith(".epub", true) || context.contentResolver.openInputStream(uri)!!.use { isEpubZip(it) }
+                    if (isEpub) {
+                        // The short name comes from the book's title: "The Message Remix" becomes MR.
+                        val title = context.contentResolver.openInputStream(uri)!!.use { runCatching { Epub.read(it).title }.getOrDefault("") }
+                            .ifBlank { name.substringBeforeLast('.') }
+                        val id = shortName(title)
+                        context.contentResolver.openInputStream(uri)!!.use { app.bibles.installEpub(it, BibleInfo(id, id, title, "")) }
+                        id
+                    } else {
+                        val id = name.substringBefore('_').substringBefore('.').uppercase().filter { it.isLetterOrDigit() }.take(12).ifBlank { "MINE" }
+                        val title = context.contentResolver.openInputStream(uri)!!.use { firstTitle(it) } ?: id
+                        context.contentResolver.openInputStream(uri)!!.use { app.bibles.installZip(it, BibleInfo(id, id, title, "")) }
+                        id
+                    }
                 }
             }.onSuccess { id -> app.settings.update { it.copy(bible = id) } }
                 .onFailure { error = it.message ?: "That file could not be read." }
@@ -264,10 +275,10 @@ fun VersionsScreen(onBack: () -> Unit, openSetup: () -> Unit = {}) {
             Spacer(Modifier.height(28.dp))
             Text("Add a Bible", style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(8.dp))
-            Text("Pick a zip of USFM files, such as one from ebible.org. Only add Bibles you are allowed to use.", color = scheme.onSurfaceVariant)
+            Text("Pick an EPUB, or a zip of USFM files such as one from ebible.org. Only add Bibles you are allowed to use.", color = scheme.onSurfaceVariant)
             Spacer(Modifier.height(14.dp))
             Row(
-                Modifier.clip(CircleShape).background(scheme.surfaceContainer).clickable { pick.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")) }
+                Modifier.clip(CircleShape).background(scheme.surfaceContainer).clickable { pick.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/epub+zip", "application/octet-stream")) }
                     .padding(horizontal = 20.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -288,6 +299,26 @@ fun VersionsScreen(onBack: () -> Unit, openSetup: () -> Unit = {}) {
 }
 
 /** The Bible's name from the first book's \id line ("\id GEN - World English Bible"). */
+/** True when a zip is an EPUB: it has the EPUB contents file. */
+private fun isEpubZip(input: java.io.InputStream): Boolean = runCatching {
+    java.util.zip.ZipInputStream(input.buffered()).use { z ->
+        while (true) { val e = z.nextEntry ?: return@use false; if (e.name == "META-INF/container.xml" || e.name == "mimetype") return@use true }
+        @Suppress("UNREACHABLE_CODE") false
+    }
+}.getOrDefault(false)
+
+/** A short name for a Bible from its title: "The Message Remix" gives MR. Words such as "The" are left out. */
+fun shortName(title: String): String {
+    val skip = setOf("the", "a", "an", "of", "and", "bible", "holy", "edition", "version")
+    val words = title.split(Regex("[^\\p{L}\\p{N}]+")).filter { it.isNotBlank() && it.lowercase() !in skip }
+    val s = when {
+        words.isEmpty() -> "MINE"
+        words.size == 1 -> words[0].take(4)
+        else -> words.take(4).joinToString("") { it.take(1) }
+    }
+    return s.uppercase().filter { it.isLetterOrDigit() }.ifBlank { "MINE" }
+}
+
 private fun firstTitle(input: java.io.InputStream): String? {
     java.util.zip.ZipInputStream(input.buffered()).use { z ->
         while (true) {
