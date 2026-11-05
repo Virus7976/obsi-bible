@@ -96,7 +96,7 @@ fun BibleTab(openSearch: () -> Unit, openVersions: () -> Unit, onBack: () -> Uni
     var page by remember { mutableStateOf<PageView?>(null) }
     val abbreviation = installed.firstOrNull { it.id == s.bible }?.abbreviation ?: s.bible
     val allMarks by app.marks.all.collectAsState()
-    val chapterMarks = remember(allMarks, s.bible, ref.book, ref.chapter) { allMarks.filter { it.sameChapter(s.bible, ref.book, ref.chapter) } }
+    val chapterMarks = remember(allMarks, s.bible, ref.book, ref.chapter) { allMarks.filter { it.sameChapter(ref.book, ref.chapter) }.map { it.inBible(s.bible) } }
     var openMark by remember(ref.chapterRef, s.bible) { mutableStateOf<String?>(null) }
     var noteFor by remember { mutableStateOf<String?>(null) }
     var clipping by remember { mutableStateOf<Pair<Clip, Int>?>(null) }
@@ -200,7 +200,7 @@ fun BibleTab(openSearch: () -> Unit, openVersions: () -> Unit, onBack: () -> Uni
                             v.onNoteIconTap = { id -> selected = emptySet(); openMark = id; noteFor = id }
                             v.onResize = { id, v1, c1, v2, c2 ->
                                 app.marks.get(id)?.let { m ->
-                                    val moved = m.copy(v1 = v1, c1 = c1, v2 = v2, c2 = c2, updated = System.currentTimeMillis())
+                                    val moved = m.copy(bible = s.bible, v1 = v1, c1 = c1, v2 = v2, c2 = c2, updated = System.currentTimeMillis())
                                     app.marks.put(moved.copy(quote = Marks.quote(ch.verses().toMap(), moved)))
                                 }
                             }

@@ -43,7 +43,14 @@ data class Mark(
     val hasNote: Boolean get() = note.isNotBlank()
     val hasColor: Boolean get() = color >= 0
     fun covers(verse: Int) = verse in v1..v2
-    fun sameChapter(bible: String, book: String, chapter: Int) = this.bible == bible && this.book == book && this.chapter == chapter
+    /** Marks belong to the verse, not to one Bible, so they show in every Bible. */
+    fun sameChapter(book: String, chapter: Int) = this.book == book && this.chapter == chapter
+
+    /**
+     * The mark as it shows in [bible]. The letter places only fit the Bible it was made in,
+     * so in another Bible it covers its whole verses.
+     */
+    fun inBible(bible: String) = if (this.bible == bible) this else copy(c1 = 0, c2 = -1)
 }
 
 /** The rules for marks. Pure, so they are tested without a phone. */
@@ -86,7 +93,7 @@ object Marks {
                 .let { it.copy(quote = quote(chapterText, it)) }
         }
         val kept = all.filterNot { m ->
-            m.sameChapter(bible, book, chapter) && !m.hasNote && added.any { a -> m.v1 >= a.v1 && m.v2 <= a.v2 }
+            m.sameChapter(book, chapter) && !m.hasNote && added.any { a -> m.v1 >= a.v1 && m.v2 <= a.v2 }
         }
         return (kept + added) to added
     }
@@ -94,7 +101,7 @@ object Marks {
     /** Takes the colour off marks that touch the picked verses. A mark with a note keeps its note. */
     fun erase(all: List<Mark>, bible: String, book: String, chapter: Int, verses: Collection<Int>): List<Mark> =
         all.mapNotNull { m ->
-            if (!m.sameChapter(bible, book, chapter) || verses.none { m.covers(it) }) m
+            if (!m.sameChapter(book, chapter) || verses.none { m.covers(it) }) m
             else if (m.hasNote) m.copy(color = -1, updated = System.currentTimeMillis())
             else null
         }

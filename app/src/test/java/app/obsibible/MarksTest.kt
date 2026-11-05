@@ -52,6 +52,22 @@ class MarksTest {
         assertTrue(added[0].quote.startsWith("For God so loved"))
     }
 
+    @Test fun marksShowInEveryBible() {
+        val m = mark(17, 4, 18, 9, color = 1)
+        assertTrue(m.sameChapter("JHN", 3))
+        assertEquals(m, m.inBible("BSB"))
+        val esv = m.inBible("ESV")
+        assertEquals(0, esv.c1)
+        assertEquals(-1, esv.c2)
+        assertEquals(m.id, esv.id)
+    }
+
+    @Test fun paintInAnotherBibleReplacesThePlainHighlight() {
+        val plain = mark(17, 0, 17, -1, color = 1)
+        val (list, _) = Marks.paint(listOf(plain), "ESV", "JHN", 3, listOf(17), 3, verses)
+        assertTrue(list.none { it.id == plain.id })
+    }
+
     @Test fun eraseKeepsTheNoteOnly() {
         val noted = mark(17, 0, 17, -1, color = 2, note = "keep")
         val plain = mark(18, 0, 18, -1, color = 1)
