@@ -36,7 +36,7 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /** Colours the page needs, taken from the theme. */
-data class PageColors(val text: Int, val muted: Int, val faint: Int, val mark: Int, val markStrong: Int, val underline: Int)
+data class PageColors(val text: Int, val muted: Int, val faint: Int, val mark: Int, val markStrong: Int, val underline: Int, val words: Int = 0)
 
 /**
  * The chapter page: one TextView inside a scroll view. One TextView keeps the text selectable
@@ -218,7 +218,10 @@ class PageView(context: Context) : NestedScrollView(context) {
                 Seg.TEXT -> {
                     var t = seg.s
                     if (sb.isEmpty() || sb[sb.length - 1] == '\n' || sb[sb.length - 1] == ' ' || sb[sb.length - 1] == ' ') t = t.trimStart()
+                    val s = sb.length
                     sb.append(t)
+                    // Red letters: the words of Jesus, when the Bible marks them.
+                    if (seg.wj && colors.words != 0 && sb.length > s) sb.setSpan(ForegroundColorSpan(colors.words), s, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                 }
                 Seg.NOTE -> {
                     while (sb.isNotEmpty() && sb[sb.length - 1] == ' ') sb.delete(sb.length - 1, sb.length)

@@ -54,9 +54,12 @@ data class Block(val kind: String, val segs: List<Seg>) {
     }
 }
 
-/** A run inside a block: [t] is TEXT, VERSE (the number in [s]) or NOTE (footnote text in [s]). */
+/**
+ * A run inside a block: [t] is TEXT, VERSE (the number in [s]) or NOTE (footnote text in [s]).
+ * [wj] marks the words of Jesus, for red letters.
+ */
 @Serializable
-data class Seg(val t: Int, val s: String) {
+data class Seg(val t: Int, val s: String, val wj: Boolean = false) {
     companion object {
         const val TEXT = 0
         const val VERSE = 1
@@ -87,16 +90,17 @@ object Usfm {
         val run = StringBuilder()
         var note: StringBuilder? = null
         var skipNote = false
+        var wj = false
 
         fun flushRun() {
             if (run.isEmpty()) return
             val s = run.toString().replace(Regex("\\s+"), " ")
             run.setLength(0)
-            if (segs.isEmpty() || segs.last().t != Seg.TEXT) {
+            if (segs.isEmpty() || segs.last().t != Seg.TEXT || segs.last().wj != wj) {
                 val t = if (segs.isEmpty()) s.trimStart() else s
-                if (t.isNotEmpty()) segs.add(Seg(Seg.TEXT, t))
+                if (t.isNotEmpty()) segs.add(Seg(Seg.TEXT, t, wj))
             } else {
-                segs[segs.lastIndex] = Seg(Seg.TEXT, segs.last().s + s)
+                segs[segs.lastIndex] = Seg(Seg.TEXT, segs.last().s + s, wj)
             }
         }
 
@@ -105,12 +109,13 @@ object Usfm {
             if (kind.isNotEmpty() && chapter > 0) {
                 val trimmed = segs.toMutableList()
                 val last = trimmed.lastOrNull()
-                if (last != null && last.t == Seg.TEXT) trimmed[trimmed.lastIndex] = Seg(Seg.TEXT, last.s.trimEnd())
+                if (last != null && last.t == Seg.TEXT) trimmed[trimmed.lastIndex] = last.copy(s = last.s.trimEnd())
                 trimmed.removeAll { it.t == Seg.TEXT && it.s.isEmpty() }
                 if (trimmed.isNotEmpty() || kind == "b") blocks.add(Block(kind, trimmed))
             }
             kind = ""
             segs = ArrayList()
+            wj = false // a character style ends with its paragraph
         }
 
         fun endChapter() {
@@ -152,6 +157,7 @@ object Usfm {
                         note = null
                     }
                     "x" -> skipNote = false
+                    "wj" -> if (note == null) { flushRun(); wj = false }
                 }
                 continue
             }
@@ -200,6 +206,7 @@ object Usfm {
                     while (i < n && text[i] != '\\') i++
                 }
                 name == "x" -> skipNote = true
+                name == "wj" -> if (note == null) { flushRun(); wj = true }
                 else -> Unit // \w, \it, \nd, \wj, \add, \ft, \fq ... keep their text, drop the marker
             }
         }

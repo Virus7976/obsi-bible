@@ -59,6 +59,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -167,6 +168,7 @@ fun BibleTab(openSearch: () -> Unit, openVersions: () -> Unit, onBack: () -> Uni
                         faint = scheme.onSurfaceVariant.copy(alpha = 0.6f).toArgb(),
                         mark = scheme.onBackground.copy(alpha = 0.08f).toArgb(), markStrong = scheme.onBackground.copy(alpha = 0.22f).toArgb(),
                         underline = scheme.onSurfaceVariant.toArgb(),
+                        words = if (!s.redLetters) 0 else if (scheme.background.luminance() < 0.5f) 0xFFE8837A.toInt() else 0xFFB0302A.toInt(),
                     )
                     val padH = with(density) { 28.dp.roundToPx() }
                     // Online Bibles must show their copyright. It sits small at the end of the chapter.
@@ -210,7 +212,7 @@ fun BibleTab(openSearch: () -> Unit, openVersions: () -> Unit, onBack: () -> Uni
                             // The key comes from the chapter itself, never from the pill: while the next
                             // chapter loads, the old text must not be filed under the new name.
                             val shown = Ref(ch.book, ch.number)
-                            v.show(ch, "${s.bible}/${shown.key}/${colors.text}/${s.readerFontSize}/$bibleVersion/${credit.first.hashCode()}", s.readerFontSize, s.lineHeight, colors, padH, with(density) { 64.dp.roundToPx() }, with(density) { 120.dp.roundToPx() })
+                            v.show(ch, "${s.bible}/${shown.key}/${colors.text}/${s.readerFontSize}/$bibleVersion/${credit.first.hashCode()}/${colors.words}", s.readerFontSize, s.lineHeight, colors, padH, with(density) { 64.dp.roundToPx() }, with(density) { 120.dp.roundToPx() })
                             v.setSelected(selected)
                             v.setMarks(chapterMarks, openMark)
                             val following = audio.active && audio.bible == s.bible && audio.ref == shown

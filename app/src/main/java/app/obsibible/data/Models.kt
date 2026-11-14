@@ -12,6 +12,8 @@ data class AppSettings(
     val appearance: String = "dark", // auto | light | dark | oled
     val readerFontSize: Float = 20f,
     val lineHeight: Float = 1.4f,
+    /** The words of Jesus in red. */
+    val redLetters: Boolean = true,
     /** Set once the 0.6 reader look moved old line spacing to the new default. */
     val lookV3: Boolean = false,
     // reading

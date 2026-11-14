@@ -179,6 +179,7 @@ private fun PageBody(id: String, s: AppSettings, openSetup: () -> Unit, openTemp
                 Slider(s.readerFontSize, { v -> set { it.copy(readerFontSize = v) } }, valueRange = 15f..32f)
                 Text("Line spacing", style = MaterialTheme.typography.titleSmall)
                 Slider(s.lineHeight, { v -> set { it.copy(lineHeight = v) } }, valueRange = 1.1f..2.0f)
+                Toggle("Jesus' words in red", s.redLetters) { v -> set { it.copy(redLetters = v) } }
                 AppIconPicker()
             }
             "listening" -> {

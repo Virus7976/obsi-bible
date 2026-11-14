@@ -108,7 +108,7 @@ object YouVersion {
      * a <span class="label">. Footnotes and cross references are left out.
      */
     fun parseHtml(ref: Ref, html: String): Chapter {
-        data class Open(val name: String, val skip: Boolean, val label: Boolean, val block: Boolean)
+        data class Open(val name: String, val skip: Boolean, val label: Boolean, val block: Boolean, val wj: Boolean = false)
         val stack = ArrayList<Open>()
         val blocks = ArrayList<Block>()
         var kind = "p"
@@ -120,7 +120,7 @@ object YouVersion {
             if (clean.isNotEmpty()) {
                 val out = clean.toMutableList()
                 val last = out.lastIndex
-                if (out[last].t == Seg.TEXT) out[last] = Seg(Seg.TEXT, out[last].s.trimEnd())
+                if (out[last].t == Seg.TEXT) out[last] = out[last].copy(s = out[last].s.trimEnd())
                 blocks += Block(kind, out)
             }
             segs = ArrayList()
@@ -129,8 +129,9 @@ object YouVersion {
             val s = decode(t).replace(Regex("\\s+"), " ")
             if (s.isEmpty()) return
             val prev = segs.lastOrNull()
-            if (prev != null && prev.t == Seg.TEXT) segs[segs.lastIndex] = Seg(Seg.TEXT, prev.s + s)
-            else segs += Seg(Seg.TEXT, if (segs.isEmpty() || prev?.t == Seg.VERSE) s.trimStart() else s)
+            val wj = stack.any { it.wj }
+            if (prev != null && prev.t == Seg.TEXT && prev.wj == wj) segs[segs.lastIndex] = Seg(Seg.TEXT, prev.s + s, wj)
+            else segs += Seg(Seg.TEXT, if (segs.isEmpty() || prev?.t == Seg.VERSE) s.trimStart() else s, wj)
         }
         for (m in tag.findAll(html)) {
             val raw = m.groupValues[4]
@@ -178,7 +179,7 @@ object YouVersion {
                 val z = vs.max()
                 if (v != verse && kind != "s1") { verse = v; segs += Seg(Seg.VERSE, if (z > v) "$v-$z" else "$v") }
             }
-            if (name !in voidTags && !attrs.trimEnd().endsWith("/")) stack += Open(name, skip, label, block || (name == "span" && k == "s1"))
+            if (name !in voidTags && !attrs.trimEnd().endsWith("/")) stack += Open(name, skip, label, block || (name == "span" && k == "s1"), c.contains("wj"))
             if (name == "br") text(" ")
         }
         flush()
