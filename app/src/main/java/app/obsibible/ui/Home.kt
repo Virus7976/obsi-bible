@@ -1,5 +1,7 @@
 package app.obsibible.ui
 
+import app.obsi.core.ui.FromOtherApps
+
 import app.obsibible.obsidian.Sender
 import app.obsibible.obsidian.Clip
 import app.obsibible.data.Mark
@@ -177,6 +179,8 @@ fun HomeTab(openRef: (Ref) -> Unit, openSearch: () -> Unit, openNotes: () -> Uni
             Spacer(Modifier.height(28.dp))
             Text("Hold a verse in the Bible tab to highlight it or add a note. Your newest ones show here.", color = scheme.onSurfaceVariant)
         }
+        Spacer(Modifier.height(28.dp))
+        FromOtherApps()
         Spacer(Modifier.height(24.dp))
     }
     sending?.let { c -> ClipSheet(c, -1, onSent = { sending = null }, onDismiss = { sending = null }) }
