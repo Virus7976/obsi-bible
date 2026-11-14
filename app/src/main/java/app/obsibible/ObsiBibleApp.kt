@@ -57,6 +57,9 @@ class ObsiBibleApp : Application() {
         super.onCreate()
         app.obsi.core.Brand.init(app.obsi.core.ObsiApp.Bible)
         app.obsi.core.share.SharedHighlights.source = ::sharedHighlights
+        app.obsi.core.share.SharedSetup.source = {
+            settings.value.takeIf { it.vaultTree.isNotBlank() }?.let { app.obsi.core.share.ObsiSetup(app.obsi.core.ObsiApp.Bible, it.vaultName, it.vaultTree) }
+        }
         settings = SettingsStore(this)
         updates = SelfUpdate(this, settings)
         bibles = Bibles(this)

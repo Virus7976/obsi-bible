@@ -1,4 +1,6 @@
 package app.obsibible.ui
+
+import app.obsi.core.ui.SameSetupCard
 import app.obsi.core.ui.ObsiAppsSection
 
 import android.content.Intent
@@ -321,6 +323,10 @@ private fun ObsidianPage(s: AppSettings, openTemplate: (String) -> Unit) {
     val pick = rememberVaultPicker { VaultIndex.forget() }
     val folder = remember(s.vaultTree) { if (s.vaultTree.isBlank()) null else Sender.folderName(context, s.vaultTree) }
 
+    SameSetupCard(
+        needed = s.vaultTree.isBlank(),
+        onApply = { setup, tree -> app.settings.update { st -> st.copy(vaultTree = tree, vaultName = st.vaultName.ifBlank { setup.vault }) }; VaultIndex.forget() },
+    )
     Text("Vault", style = MaterialTheme.typography.titleMedium)
     Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(Icons.Rounded.FolderOpen, null, Modifier.size(22.dp), tint = muted)
