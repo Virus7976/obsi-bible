@@ -30,6 +30,9 @@ class ObsiBibleApp : Application() {
         private set
     lateinit var marks: app.obsibible.data.MarksStore
         private set
+    /** When each highlight comes back for review. */
+    lateinit var reviews: app.obsi.core.data.ReviewCards
+        private set
     lateinit var keyScan: app.obsibible.bible.KeyScan
         private set
     lateinit var vaultTags: app.obsibible.obsidian.VaultTags
@@ -78,6 +81,13 @@ class ObsiBibleApp : Application() {
         if (!settings.value.lookV3) settings.update { it.copy(lookV3 = true, lineHeight = if (it.lineHeight in 1.55f..1.8f) 1.4f else it.lineHeight, readerFontSize = if (it.readerFontSize == 21f) 20f else it.readerFontSize) }
         audio = AudioEngine(this)
         marks = app.obsibible.data.MarksStore(this)
+        reviews = app.obsi.core.data.ReviewCards(this)
+        app.obsi.core.share.SharedReview.due = {
+            val now = System.currentTimeMillis()
+            val byId = marks.all.value.associateBy { it.id }
+            sharedHighlights().filter { h -> byId[h.key]?.let { m -> (reviews.dueAt(m.id, m.created) ?: Long.MAX_VALUE) <= now } == true }
+        }
+        app.obsi.core.share.SharedReview.act = { key, action -> reviews.act(key, action) }
         // Every highlight goes into the vault's highlights files, a moment after it changes.
         @OptIn(kotlinx.coroutines.FlowPreview::class)
         appScope.launch(Dispatchers.IO) {
@@ -112,7 +122,7 @@ class ObsiBibleApp : Application() {
                 app = app.obsi.core.ObsiApp.Bible, itemId = m.ref.key, itemTitle = m.label,
                 text = m.quote.trim().ifBlank { m.label }, note = m.note,
                 color = if (m.hasColor) app.obsibible.data.HighlightColors[m.color.coerceIn(app.obsibible.data.HighlightColors.indices)].ui else 0xFF9AA0A6,
-                at = m.id, place = m.bible, created = m.created, tags = m.tags,
+                at = m.id, place = m.bible, created = m.created, tags = m.tags, key = m.id,
             )
         }
 }
