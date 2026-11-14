@@ -1,5 +1,7 @@
 package app.obsibible.ui
 
+import app.obsi.core.ui.SmoothSheet
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -73,7 +75,7 @@ import app.obsibible.obsidian.DataField
 import app.obsibible.obsidian.TemplateNote
 import app.obsibible.obsidian.VaultIndex
 import app.obsibible.obsidian.PropertyRule
-import app.obsibible.obsidian.Template
+import app.obsi.core.obsidian.Template
 import app.obsibible.obsidian.BibleData
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

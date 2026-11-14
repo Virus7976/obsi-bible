@@ -1,6 +1,6 @@
 package app.obsibible.ui
 
-import app.obsibible.obsidian.Template
+import app.obsi.core.obsidian.Template
 import app.obsibible.obsidian.TemplateSync
 import app.obsibible.obsidian.TemplateNote
 import androidx.compose.runtime.mutableStateMapOf

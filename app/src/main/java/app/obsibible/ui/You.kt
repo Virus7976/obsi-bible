@@ -1,4 +1,6 @@
 package app.obsibible.ui
+import app.obsi.core.ui.otherHighlights
+import app.obsi.core.ui.rememberOtherHighlights
 
 import app.obsibible.obsidian.Sender
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -266,6 +268,10 @@ fun NotesTab(openRef: (Ref) -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val tags = remember(marks) { marks.flatMap { it.tags }.groupingBy { it }.eachCount().entries.sortedByDescending { it.value } }
     val shown = remember(marks, tag) { marks.filter { (it.hasColor || it.hasNote) && (tag == null || tag in it.tags) } }
+    // Highlights from ObsiTube and ObsiRead, when they are on this phone.
+    val others = rememberOtherHighlights()
+    var allApps by remember { mutableStateOf(true) }
+    val othersShown = remember(others, allApps, tag) { if (!allApps) emptyList() else others.filter { tag == null || tag in it.tags } }
     val groups: List<Pair<String, List<Mark>>> = remember(shown, sort) {
         when (sort) {
             NoteSort.Book -> shown.sortedWith(compareBy({ it.ref.bookInfo.number }, { it.chapter }, { it.v1 }, { it.c1 }))
@@ -281,6 +287,7 @@ fun NotesTab(openRef: (Ref) -> Unit) {
         }
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             NoteSort.entries.forEach { o -> SmallChip(o.label, o == sort) { sort = o } }
+            if (others.isNotEmpty()) SmallChip("All apps", allApps) { allApps = !allApps }
             if (tags.isNotEmpty()) Box(Modifier.padding(horizontal = 4.dp).width(1.dp).height(36.dp).background(scheme.outlineVariant))
             tags.forEach { (t, n) -> SmallChip("#$t $n", t == tag) { tag = if (tag == t) null else t } }
         }
@@ -293,7 +300,7 @@ fun NotesTab(openRef: (Ref) -> Unit) {
         }
         Text(where, color = if (syncError != null) scheme.error else scheme.onSurfaceVariant, fontSize = 14.sp,
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 2.dp))
-        if (shown.isEmpty()) {
+        if (shown.isEmpty() && othersShown.isEmpty()) {
             Column(Modifier.fillMaxWidth().padding(32.dp)) {
                 Text("No notes yet.", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(6.dp))
@@ -314,6 +321,7 @@ fun NotesTab(openRef: (Ref) -> Unit) {
                         NoteRow(m, abbr, inFile, onClick = { app.openMark.value = m.id; openRef(m.ref) }, onLongClick = { menuFor = m })
                     }
                 }
+                otherHighlights(othersShown, sides = 16.dp)
             }
         }
     }

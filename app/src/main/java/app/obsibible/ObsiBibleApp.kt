@@ -55,6 +55,8 @@ class ObsiBibleApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        app.obsi.core.Brand.init(app.obsi.core.ObsiApp.Bible)
+        app.obsi.core.share.SharedHighlights.source = ::sharedHighlights
         settings = SettingsStore(this)
         updates = SelfUpdate(this, settings)
         bibles = Bibles(this)
@@ -98,4 +100,16 @@ class ObsiBibleApp : Application() {
             }
         })
     }
+
+    /** Every highlight and note, for ObsiTube and ObsiRead to show. */
+    private fun sharedHighlights(): List<app.obsi.core.share.SharedHighlight> = marks.all.value
+        .filter { it.hasColor || it.hasNote }
+        .map { m ->
+            app.obsi.core.share.SharedHighlight(
+                app = app.obsi.core.ObsiApp.Bible, itemId = m.ref.key, itemTitle = m.label,
+                text = m.quote.trim().ifBlank { m.label }, note = m.note,
+                color = if (m.hasColor) app.obsibible.data.HighlightColors[m.color.coerceIn(app.obsibible.data.HighlightColors.indices)].ui else 0xFF9AA0A6,
+                at = m.id, place = m.bible, created = m.created, tags = m.tags,
+            )
+        }
 }

@@ -1,5 +1,7 @@
 package app.obsibible.obsidian
 
+import app.obsi.core.obsidian.Template
+
 import app.obsibible.data.AppSettings
 import app.obsibible.data.ClipTemplate
 import app.obsibible.data.TemplateProperty

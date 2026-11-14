@@ -133,13 +133,6 @@ private fun typography(): Typography {
 
 // ---------- motion ----------
 
-/** How bouncy our own animations are. Calm, to suit reading. */
-data class Spring(val damping: Float, val stiffness: Float) {
-    fun <T> spec(): FiniteAnimationSpec<T> = spring(damping, stiffness)
-}
-
-val LocalSpring = staticCompositionLocalOf { Spring(0.9f, 420f) }
-
 val LocalSettings = staticCompositionLocalOf { AppSettings() }
 
 @Composable

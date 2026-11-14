@@ -1,4 +1,5 @@
 package app.obsibible.ui
+import app.obsi.core.ui.ObsiAppsSection
 
 import android.content.Intent
 import android.provider.Settings as AndroidSettings
@@ -124,7 +125,10 @@ fun SettingsScreen(onBack: () -> Unit, openSetup: () -> Unit = {}, openTemplate:
             Spacer(Modifier.height(4.dp))
             when {
                 open != null -> PageBody(open.id, s, openSetup, openTemplate) { voices = true }
-                query.isBlank() -> pages.forEach { p -> MenuRow(p) { page = p.id } }
+                query.isBlank() -> {
+                    ObsiAppsSection(sides = 0.dp)
+                    pages.forEach { p -> MenuRow(p) { page = p.id } }
+                }
                 else -> {
                     // While searching, every page that matches shows in full.
                     val hits = pages.filter { SettingsSearch.matches(query, it.title + " " + it.words) }

@@ -20,3 +20,10 @@ dependencyResolutionManagement {
 
 rootProject.name = "ObsiBible"
 include(":app")
+
+// The part all three Obsi apps share (github.com/Virus7976/obsi-core). GitHub builds use the copy
+// pinned in core/. On this PC the folder next to this repo is used, so one edit reaches all apps.
+include(":core")
+val sharedCore = file("../obsi-core")
+project(":core").projectDir =
+    if (System.getenv("CI") == null && sharedCore.resolve("build.gradle.kts").exists()) sharedCore else file("core")

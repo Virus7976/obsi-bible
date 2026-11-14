@@ -26,6 +26,12 @@
             android:launchMode="singleTask"
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|uiMode|density|fontScale">
+            <!-- A Bible link or verse shared to the app, or passed on by ObsiTube or ObsiRead. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
             <!-- Verse links in Obsidian notes: obsibible://ref/JHN.3.16 -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
