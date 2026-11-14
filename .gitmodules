@@ -1,0 +1,3 @@
+[submodule "core"]
+	path = core
+	url = https://github.com/Virus7976/obsi-core.git

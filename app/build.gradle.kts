@@ -14,8 +14,8 @@ android {
         applicationId = "app.obsibible"
         minSdk = 26
         targetSdk = 36
-        versionCode = 16
-        versionName = "0.6.5"
+        versionCode = 17
+        versionName = "0.7.0"
     }
 
     // The release key never lives in the repo. GitHub passes it in through secrets (see
