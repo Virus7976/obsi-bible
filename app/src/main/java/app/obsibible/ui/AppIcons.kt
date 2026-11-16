@@ -38,7 +38,7 @@ class AppIcon(val id: String, val label: String, val art: Int, val bg: Color = C
 
 /** Each one is an activity-alias in the manifest, named Icon plus its id. */
 val AppIcons = listOf(
-    AppIcon("Night", "Night", R.drawable.ic_book_white),
+    AppIcon("Night", "Glass", R.drawable.ic_obsi_glass_preview),
     AppIcon("Paper", "Paper", R.drawable.ic_book_black, Color(0xFFF5F1E8)),
 )
 

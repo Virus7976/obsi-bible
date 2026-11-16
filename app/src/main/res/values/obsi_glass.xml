@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Made by obsi-core/tools/icons/render.py. Under the foreground, which covers it. -->
+<resources>
+    <color name="obsi_glass_bg">#FF140A2E</color>
+</resources>
