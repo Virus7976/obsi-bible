@@ -1,5 +1,6 @@
 package app.obsibible.ui
 
+import app.obsi.core.ui.StatsScreen
 import kotlinx.coroutines.launch
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -107,6 +108,7 @@ sealed interface Screen {
     data object Search : Screen
     data object Versions : Screen
     data object Setup : Screen
+    data object Stats : Screen
     data class Template(val id: String) : Screen
 }
 
@@ -173,6 +175,7 @@ fun AppRoot(app: ObsiBibleApp) {
                                     Screen.Search -> SearchScreen(onOpen = ::openRef, onBack = ::pop, autofocus = true)
                                     Screen.Versions -> VersionsScreen(onBack = ::pop, openSetup = { push(Screen.Setup) })
                                     Screen.Setup -> SetupScreen(onDone = ::pop)
+                                    Screen.Stats -> StatsScreen(onBack = ::pop)
                                     is Screen.Template -> TemplateEditorScreen(screen.id, onBack = ::pop)
                                 }
                               }
@@ -286,7 +289,7 @@ private fun Tabs(tab: Tab, onTab: (Tab) -> Unit, push: (Screen) -> Unit, openRef
             Crossfade(tab, animationSpec = tween(120), label = "tab") { t ->
                 tabState.SaveableStateProvider(t.name) {
                     when (t) {
-                        Tab.Home -> HomeTab(openRef = openRef, openSearch = { onTab(Tab.Search) }, openNotes = { onTab(Tab.Notes) })
+                        Tab.Home -> HomeTab(openRef = openRef, openSearch = { onTab(Tab.Search) }, openNotes = { onTab(Tab.Notes) }, openStats = { push(Screen.Stats) })
                         Tab.Bible -> BibleTab(openSearch = { push(Screen.Search) }, openVersions = { push(Screen.Versions) }, onBack = { onTab(Tab.Home) })
                         Tab.Search -> SearchScreen(onOpen = openRef, onBack = null, autofocus = false)
                         Tab.You -> YouTab(openSettings = { push(Screen.Settings) }, openRef = openRef)

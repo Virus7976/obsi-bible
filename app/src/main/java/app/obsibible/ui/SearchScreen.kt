@@ -1,5 +1,8 @@
 package app.obsibible.ui
 
+import app.obsi.core.ui.rememberOtherHits
+import app.obsi.core.ui.rememberOthersDue
+import app.obsi.core.ui.otherAppsResults
 import app.obsi.core.ui.OtherHighlightRow
 import app.obsi.core.ui.matching
 import app.obsi.core.ui.rememberOtherHighlights
@@ -103,8 +106,8 @@ fun SearchScreen(onOpen: (Ref) -> Unit, onBack: (() -> Unit)?, autofocus: Boolea
     var filters by remember { mutableStateOf(SearchFilters()) }
     var results by remember { mutableStateOf(Found(0, emptyList())) }
     val allMarks by app.marks.all.collectAsState()
-    // Highlights from ObsiTube and ObsiRead. Words in them show under the Bible's own.
-    val others = rememberOtherHighlights()
+    // The other Obsi apps search too. Their results show under the Bible's own.
+    val otherHits = rememberOtherHits(q.trim().removePrefix("#").takeIf { it.length >= 2 }.orEmpty())
     val installed by app.bibles.installed.collectAsState()
     var searching by remember { mutableStateOf(false) }
     var openBook by remember { mutableStateOf<String?>(null) }
@@ -247,12 +250,8 @@ fun SearchScreen(onOpen: (Ref) -> Unit, onBack: (() -> Unit)?, autofocus: Boolea
                     MarkRow(m, abbr, q) { app.openMark.value = m.id; open(m.ref) }
                 }
             }
-            // highlights in your videos and articles
-            val fromOthers = if (q.trim().length < 2) emptyList() else others.matching(q.trim().removePrefix("#")).take(20)
-            if (fromOthers.isNotEmpty()) {
-                item(key = "others-label") { SectionTitle("In your videos and articles") }
-                items(fromOthers.size, key = { "other-$it" }) { i -> OtherHighlightRow(fromOthers[i], Modifier.padding(horizontal = 4.dp)) }
-            }
+            // What the other Obsi apps found: videos, articles, lessons, highlights and words inside them.
+            if (q.trim().length >= 2) otherAppsResults(otherHits, q.trim())
             // words in verses (hidden when a book matched and no verse has the words)
             if (wordsQuery && !q.trim().startsWith("#") && (books.isEmpty() || searching || results.hits.isNotEmpty())) {
                 item(key = "scope") {

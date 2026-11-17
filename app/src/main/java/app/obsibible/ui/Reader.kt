@@ -1,5 +1,6 @@
 package app.obsibible.ui
 
+import app.obsi.core.ui.CountTime
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -89,6 +90,8 @@ fun BibleTab(openSearch: () -> Unit, openVersions: () -> Unit, onBack: () -> Uni
     val context = LocalContext.current
     val ref = Ref.fromKey(s.lastRef) ?: Ref("JHN", 1)
     val focusVerse = Ref.fromKey(s.lastRef)?.verse ?: 0
+    // Time spent reading, for the shared stats, by chapter.
+    CountTime(item = Ref(ref.book, ref.chapter).label)
     var chapter by remember { mutableStateOf<app.obsibible.bible.Chapter?>(null) }
     var selected by remember(ref.chapterRef, s.bible) { mutableStateOf(setOf<Int>()) }
     var sheet by remember { mutableStateOf(false) }

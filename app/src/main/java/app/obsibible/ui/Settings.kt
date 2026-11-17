@@ -1,5 +1,6 @@
 package app.obsibible.ui
 
+import app.obsi.core.ui.BackupPanel
 import app.obsi.core.ui.SameSetupCard
 import app.obsi.core.ui.ObsiAppsSection
 
@@ -27,6 +28,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Backup
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.FolderOpen
@@ -94,6 +96,8 @@ private val pages = listOf(
         "listening audio voice speech narrator next chapter pause note follow scroll sync back microsoft azure key region phone voice"),
     SettingsPage("obsidian", "Obsidian", "Vault, highlights file, templates, tags", Icons.Rounded.Description,
         "obsidian vault folder template templates note name running note clip send export tags links properties highlights file"),
+    SettingsPage("backup", "Backup", "Save every Obsi app to one file", Icons.Rounded.Backup,
+        "backup restore save file new phone export import move"),
     SettingsPage("updates", "Updates", "Check for and install new versions", Icons.Rounded.SystemUpdate,
         "updates version install check notifications release"),
 )
@@ -208,6 +212,7 @@ private fun PageBody(id: String, s: AppSettings, openSetup: () -> Unit, openTemp
                 OutlinedTextField(region, { region = it.trim().lowercase(); set { st -> st.copy(cloudRegion = region) } }, Modifier.fillMaxWidth(), label = { Text("Region, such as eastus") }, singleLine = true)
             }
             "obsidian" -> ObsidianPage(s, openTemplate)
+            "backup" -> BackupPanel(Modifier.padding(horizontal = 4.dp))
             "updates" -> UpdateGroup()
         }
     }

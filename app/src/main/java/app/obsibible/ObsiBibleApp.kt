@@ -60,6 +60,14 @@ class ObsiBibleApp : Application() {
         super.onCreate()
         app.obsi.core.Brand.init(app.obsi.core.ObsiApp.Bible)
         app.obsi.core.share.SharedHighlights.source = ::sharedHighlights
+        app.obsi.core.share.SharedSearch.source = { q ->
+            val marks = app.obsi.core.share.SharedSearch.highlights(q, sharedHighlights())
+            val bible = settings.state.value.bible
+            val verses = runCatching { bibles.search(bible, q, app.obsibible.bible.Scope.All, null, limit = 12).hits }.getOrDefault(emptyList()).map { h ->
+                app.obsi.core.share.SharedHit(app.obsi.core.ObsiApp.Bible, "text", h.ref.label, bible, h.text, h.ref.key, "", 40.0)
+            }
+            marks + verses
+        }
         // Bible keeps its own colours. It shares only light, dark or black with the other apps.
         app.obsi.core.share.SharedStyle.source = {
             settings.value.let { app.obsi.core.share.ObsiStyle(at = it.styleAt, appearance = it.appearance, full = false) }

@@ -1,5 +1,6 @@
 package app.obsibible.ui
 
+import app.obsi.core.ui.StatsCard
 import app.obsi.core.data.HttpWords
 import app.obsi.core.ui.AllAppsReview
 import app.obsi.core.ui.FromOtherApps
@@ -78,7 +79,7 @@ private val DailyVerses = listOf(
 )
 
 @Composable
-fun HomeTab(openRef: (Ref) -> Unit, openSearch: () -> Unit, openNotes: () -> Unit = {}) {
+fun HomeTab(openRef: (Ref) -> Unit, openSearch: () -> Unit, openNotes: () -> Unit = {}, openStats: () -> Unit = {}) {
     val app = LocalApp.current
     val s by app.settings.state.collectAsState()
     val version by app.bibles.version.collectAsState()
@@ -182,6 +183,9 @@ fun HomeTab(openRef: (Ref) -> Unit, openSearch: () -> Unit, openNotes: () -> Uni
             Text("Hold a verse in the Bible tab to highlight it or add a note. Your newest ones show here.", color = scheme.onSurfaceVariant)
         }
         Spacer(Modifier.height(28.dp))
+        // The streak and this week, from every Obsi app on the phone.
+        StatsCard(openStats, Modifier.fillMaxWidth())
+        Spacer(Modifier.height(20.dp))
         AllAppsReview()
         Spacer(Modifier.height(28.dp))
         FromOtherApps()
