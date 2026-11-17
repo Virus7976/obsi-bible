@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Made by obsi-core/tools/icons/render.py. Under the foreground, which covers it. -->
+<!-- Made by obsi-core/tools/icons/render.py. Under each foreground, which covers it. -->
 <resources>
-    <color name="obsi_glass_bg">#FF140A2E</color>
+    <color name="obsi_glass_bg">#FF1A0D3D</color>
+    <color name="obsi_ruby_bg">#FF44050D</color>
+    <color name="obsi_sapphire_bg">#FF001839</color>
+    <color name="obsi_emerald_bg">#FF002208</color>
+    <color name="obsi_amber_bg">#FF2D0F00</color>
 </resources>

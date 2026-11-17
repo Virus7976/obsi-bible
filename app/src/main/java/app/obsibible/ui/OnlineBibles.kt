@@ -1,5 +1,6 @@
 package app.obsibible.ui
 
+import app.obsi.core.data.HttpWords
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
@@ -89,7 +90,7 @@ fun OnlineBibles(openSetup: () -> Unit) {
         finding = source
         scope.launch {
             runCatching { withContext(Dispatchers.IO) { load() } }
-                .onSuccess { found = source to it }.onFailure { error = it.message ?: "Could not reach $source." }
+                .onSuccess { found = source to it }.onFailure { error = HttpWords.error(it, "Could not reach $source.") }
             finding = null
         }
     }

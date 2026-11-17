@@ -1,5 +1,6 @@
 package app.obsibible.ui
 
+import app.obsi.core.data.HttpWords
 import app.obsi.core.ui.AllAppsReview
 import app.obsi.core.ui.FromOtherApps
 
@@ -241,7 +242,7 @@ fun VersionsScreen(onBack: () -> Unit, openSetup: () -> Unit = {}) {
                     }
                 }
             }.onSuccess { id -> app.settings.update { it.copy(bible = id) } }
-                .onFailure { error = it.message ?: "That file could not be read." }
+                .onFailure { error = HttpWords.error(it, "That file could not be read.") }
         }
     }
 

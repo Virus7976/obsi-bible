@@ -1,5 +1,6 @@
 package app.obsibible.ui
 
+import app.obsi.core.data.HttpWords
 import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -182,7 +183,7 @@ fun VoicePicker(bible: String, onDone: () -> Unit) {
         phone = withContext(Dispatchers.IO) { app.audio.phone.voices() }
         if (s.cloudKey.isNotBlank() && s.cloudRegion.isNotBlank()) {
             runCatching { withContext(Dispatchers.IO) { CloudSpeech.voices(s.cloudKey, s.cloudRegion) } }
-                .onSuccess { cloud = it }.onFailure { cloudError = it.message }
+                .onSuccess { cloud = it }.onFailure { cloudError = HttpWords.error(it, "Could not reach the audio service.") }
         }
     }
     val choices = buildList {

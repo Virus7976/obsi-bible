@@ -476,7 +476,11 @@ fun clipFor(app: ObsiBibleApp, m: Mark): Clip {
 
 /** Remembers the vault folder the user picks, with lasting read and write access. */
 @Composable
-fun rememberVaultPicker(onPicked: (Uri) -> Unit): () -> Unit {
+fun rememberVaultPicker(onPicked: (Uri) -> Unit): () -> Unit = rememberVaultPickerAt(onPicked).let { open -> { open(null) } }
+
+/** The vault picker, opened at [start] when it is given: the folder another Obsi app already uses. */
+@Composable
+fun rememberVaultPickerAt(onPicked: (Uri) -> Unit): (Uri?) -> Unit {
     val context = LocalContext.current
     val app = LocalApp.current
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -489,7 +493,7 @@ fun rememberVaultPicker(onPicked: (Uri) -> Unit): () -> Unit {
             onPicked(uri)
         }
     }
-    return { launcher.launch(null) }
+    return { start -> launcher.launch(start) }
 }
 
 /**

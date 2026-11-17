@@ -10,6 +10,8 @@ import kotlinx.serialization.Serializable
 data class AppSettings(
     // look
     val appearance: String = "dark", // auto | light | dark | oled
+    /** When light, dark or black was last picked by hand, here or in another Obsi app. */
+    val styleAt: Long = 0L,
     val readerFontSize: Float = 20f,
     val lineHeight: Float = 1.4f,
     /** The words of Jesus in red. */

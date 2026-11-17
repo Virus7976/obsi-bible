@@ -60,6 +60,10 @@ class ObsiBibleApp : Application() {
         super.onCreate()
         app.obsi.core.Brand.init(app.obsi.core.ObsiApp.Bible)
         app.obsi.core.share.SharedHighlights.source = ::sharedHighlights
+        // Bible keeps its own colours. It shares only light, dark or black with the other apps.
+        app.obsi.core.share.SharedStyle.source = {
+            settings.value.let { app.obsi.core.share.ObsiStyle(at = it.styleAt, appearance = it.appearance, full = false) }
+        }
         app.obsi.core.share.SharedSetup.source = {
             settings.value.takeIf { it.vaultTree.isNotBlank() }?.let { app.obsi.core.share.ObsiSetup(app.obsi.core.ObsiApp.Bible, it.vaultName, it.vaultTree) }
         }

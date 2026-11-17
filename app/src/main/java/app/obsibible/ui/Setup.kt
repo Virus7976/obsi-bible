@@ -64,6 +64,9 @@ import app.obsibible.bible.YouVersion
 import app.obsibible.obsidian.Sender
 import app.obsibible.obsidian.VaultIndex
 import kotlinx.coroutines.Dispatchers
+import app.obsi.core.ObsiApp
+import app.obsi.core.share.ObsiSetup
+import app.obsi.core.share.SharedSetup
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -290,9 +293,26 @@ private fun ObsidianPage() {
     val s by app.settings.state.collectAsState()
     val context = LocalContext.current
     val scheme = MaterialTheme.colorScheme
-    val pick = rememberVaultPicker { VaultIndex.forget() }
+    val pickAt = rememberVaultPickerAt { VaultIndex.forget() }
+    val pick = { pickAt(null) }
     val folder = remember(s.vaultTree) { if (s.vaultTree.isBlank()) null else Sender.folderName(context, s.vaultTree) }
+    // The vault another Obsi app already uses, so it is one tap here.
+    var others by remember { androidx.compose.runtime.mutableStateOf(emptyList<ObsiSetup>()) }
+    var locked by remember { androidx.compose.runtime.mutableStateOf(emptyList<ObsiApp>()) }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        others = SharedSetup.fromOthers(context)
+        locked = SharedSetup.lockedOut(context)
+    }
     PageHead("Obsidian", "Send highlights and notes to your vault. Each note links back to its verse.")
+    val o = others.firstOrNull()
+    if (folder == null && o != null) {
+        androidx.compose.material3.Button(onClick = { pickAt(android.net.Uri.parse(o.folder)) }, modifier = Modifier.fillMaxWidth()) {
+            Text("Use “${o.vault.ifBlank { "your vault" }}”, like ${o.app.title}")
+        }
+        Note("Android opens the folder picker at that vault. Tap Use this folder.")
+    } else if (folder == null && locked.isNotEmpty()) {
+        Note("${locked.joinToString(" and ") { it.title }} is on this phone but cannot share yet. Install Obsi Bible again (its newest version) to link them.")
+    }
     Steps(
         "Get Obsidian, if it is not on this phone." to SetupLinks.OBSIDIAN,
         "Pick your vault folder below. Notes are then saved straight into it." to null,

@@ -1,5 +1,6 @@
 package app.obsibible.ui
 
+import kotlinx.coroutines.launch
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -112,6 +113,16 @@ sealed interface Screen {
 @Composable
 fun AppRoot(app: ObsiBibleApp) {
     val settings by app.settings.state.collectAsState()
+    // Light, dark or black picked in another Obsi app shows here when you come back.
+    val lifecycle = androidx.compose.ui.platform.LocalLifecycleOwner.current.lifecycle
+    val styleScope = androidx.compose.runtime.rememberCoroutineScope()
+    androidx.compose.runtime.DisposableEffect(lifecycle) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
+            if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) styleScope.launch { app.settings.pullStyle(app) }
+        }
+        lifecycle.addObserver(obs)
+        onDispose { lifecycle.removeObserver(obs) }
+    }
     CompositionLocalProvider(LocalApp provides app) {
         ObsiBibleTheme(settings) {
             val stack = remember { mutableStateListOf<Screen>(Screen.Tabs) }
