@@ -1,5 +1,7 @@
 package app.obsibible.ui
 
+import app.obsi.core.ui.WhatsNewAfterUpdate
+import app.obsi.core.ui.ObsiOnLeave
 import app.obsi.core.ui.StatsScreen
 import kotlinx.coroutines.launch
 import androidx.compose.animation.core.LinearEasing
@@ -127,6 +129,9 @@ fun AppRoot(app: ObsiBibleApp) {
     }
     CompositionLocalProvider(LocalApp provides app) {
         ObsiBibleTheme(settings) {
+            // After an update: what changed, one time.
+            WhatsNewAfterUpdate()
+            ObsiOnLeave()
             val stack = remember { mutableStateListOf<Screen>(Screen.Tabs) }
             var tab by remember { mutableStateOf(Tab.Bible) }
             val holder = rememberSaveableStateHolder()

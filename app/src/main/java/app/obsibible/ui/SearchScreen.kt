@@ -1,5 +1,6 @@
 package app.obsibible.ui
 
+import app.obsi.core.ui.findByMeaning
 import app.obsi.core.ui.rememberOtherHits
 import app.obsi.core.ui.rememberOthersDue
 import app.obsi.core.ui.otherAppsResults
@@ -212,6 +213,8 @@ fun SearchScreen(onOpen: (Ref) -> Unit, onBack: (() -> Unit)?, autofocus: Boolea
         HorizontalDivider(color = scheme.outlineVariant)
 
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+            // One quiet row finds your highlights by meaning, not only by their words.
+            findByMeaning(q)
             // a full reference: one card that opens it
             val p = parsed
             if (p != null && p.chapterGiven && books.isNotEmpty()) item(key = "goto") {

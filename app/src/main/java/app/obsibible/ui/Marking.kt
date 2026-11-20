@@ -289,7 +289,7 @@ fun NoteSheet(mark: Mark, onSave: (note: String, tags: List<String>) -> Unit, on
                 Spacer(Modifier.height(16.dp))
                 Text("Tags", style = MaterialTheme.typography.titleSmall, color = scheme.onSurfaceVariant)
                 Spacer(Modifier.height(8.dp))
-                TagEditor(tags, tagText) { tagText = it }
+                TagEditor(tags, tagText, mark.quote, note) { tagText = it }
                 Spacer(Modifier.height(16.dp))
                 Text("Links", style = MaterialTheme.typography.titleSmall, color = scheme.onSurfaceVariant)
                 Spacer(Modifier.height(8.dp))
@@ -621,7 +621,7 @@ fun ClipSheet(clip: Clip, color: Int, onSent: () -> Unit, onDismiss: () -> Unit)
             Spacer(Modifier.height(14.dp))
             Text("Tags", style = MaterialTheme.typography.titleSmall, color = scheme.onSurfaceVariant)
             Spacer(Modifier.height(8.dp))
-            TagEditor(tags, tagText) { tagText = it }
+            TagEditor(tags, tagText, clip.text) { tagText = it }
 
             // where it goes
             Spacer(Modifier.height(14.dp))

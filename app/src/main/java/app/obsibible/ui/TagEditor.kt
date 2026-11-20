@@ -1,5 +1,7 @@
 package app.obsibible.ui
 
+import app.obsi.core.ui.TagIdeasRow
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -57,7 +59,7 @@ object TagPool {
  */
 @OptIn(ExperimentalLayoutApi::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-fun TagEditor(tags: SnapshotStateList<String>, typed: String, onTyped: (String) -> Unit) {
+fun TagEditor(tags: SnapshotStateList<String>, typed: String, text: String = "", note: String = "", onTyped: (String) -> Unit) {
     val app = LocalApp.current
     val scheme = MaterialTheme.colorScheme
     val marks by app.marks.all.collectAsState()
@@ -97,5 +99,8 @@ fun TagEditor(tags: SnapshotStateList<String>, typed: String, onTyped: (String) 
                 suggest.forEach { t -> TagChip("#$t", on = false) { add(t) } }
             }
         }
+        // Waits while the keyboard is up, so the ideas read the whole note, not half of it.
+        val writing = androidx.compose.foundation.layout.WindowInsets.ime.getBottom(androidx.compose.ui.platform.LocalDensity.current) > 0
+        if (text.isNotBlank()) TagIdeasRow(text, pool, tags.toList(), { add(it) }, Modifier.padding(top = 8.dp), note = note, writing = writing)
     }
 }

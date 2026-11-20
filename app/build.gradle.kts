@@ -14,8 +14,8 @@ android {
         applicationId = "app.obsibible"
         minSdk = 26
         targetSdk = 36
-        versionCode = 23
-        versionName = "0.10.1"
+        versionCode = 24
+        versionName = "0.11.0"
     }
 
     // The release key never lives in the repo. GitHub passes it in through secrets (see
@@ -55,6 +55,10 @@ android {
 
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        // The on-phone AI engine is large. Phones are arm64; the x86_64 copy only serves emulators.
+        jniLibs.excludes += "lib/x86_64/liblitertlm_jni.so"
+        // Compressed in the APK, so the download is smaller. The phone unpacks it once, at install.
+        jniLibs.useLegacyPackaging = true
     }
 }
 
@@ -120,3 +124,11 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
 }
+
+// The release notes in docs/releases go into the app, so Settings > What's new shows them with no network.
+val releaseNotes = tasks.register<Sync>("releaseNotes") {
+    from(rootProject.file("docs/releases")) { include("*.md") }
+    into(layout.buildDirectory.dir("generated/releaseNotes/releases"))
+}
+android.sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/releaseNotes"))
+tasks.named("preBuild") { dependsOn(releaseNotes) }

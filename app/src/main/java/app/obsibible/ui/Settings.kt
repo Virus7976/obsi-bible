@@ -1,6 +1,12 @@
 package app.obsibible.ui
 
 import app.obsi.core.ui.BackupPanel
+import app.obsi.core.ui.WhatsNewScreen
+import app.obsi.core.ui.WeeklyPanel
+import app.obsi.core.ui.AiPanel
+import androidx.compose.material.icons.rounded.DateRange
+import androidx.compose.material.icons.rounded.Key
+import androidx.compose.material.icons.rounded.NewReleases
 import app.obsi.core.ui.SameSetupCard
 import app.obsi.core.ui.ObsiAppsSection
 
@@ -96,10 +102,16 @@ private val pages = listOf(
         "listening audio voice speech narrator next chapter pause note follow scroll sync back microsoft azure key region phone voice"),
     SettingsPage("obsidian", "Obsidian", "Vault, highlights file, templates, tags", Icons.Rounded.Description,
         "obsidian vault folder template templates note name running note clip send export tags links properties highlights file"),
+    SettingsPage("weekly", "Weekly note", "Your week, written into your own weekly note", Icons.Rounded.DateRange,
+        "weekly note week periodic notes calendar journals templater template summary obsidian"),
     SettingsPage("backup", "Backup", "Save every Obsi app to one file", Icons.Rounded.Backup,
         "backup restore save file new phone export import move"),
+    SettingsPage("ai", "AI service", "Optional. Find by meaning, tag ideas", Icons.Rounded.Key,
+        "ai service key model openrouter openai anthropic claude gemini groq mistral deepseek ollama grok meaning find tags"),
     SettingsPage("updates", "Updates", "Check for and install new versions", Icons.Rounded.SystemUpdate,
         "updates version install check notifications release"),
+    SettingsPage("whatsnew", "What's new", "What changed in each version", Icons.Rounded.NewReleases,
+        "whats new changes changelog release notes version"),
 )
 
 @Composable
@@ -112,6 +124,7 @@ fun SettingsScreen(onBack: () -> Unit, openSetup: () -> Unit = {}, openTemplate:
     var page by rememberSaveable { mutableStateOf<String?>(null) }
     BackHandler(enabled = page != null) { page = null }
     val open = pages.firstOrNull { it.id == page }
+    if (page == "whatsnew") { WhatsNewScreen { page = null }; return }
 
     Column(Modifier.fillMaxSize()) {
         TopBack(open?.title ?: "Settings", onBack = { if (page != null) page = null else onBack() })
@@ -212,7 +225,9 @@ private fun PageBody(id: String, s: AppSettings, openSetup: () -> Unit, openTemp
                 OutlinedTextField(region, { region = it.trim().lowercase(); set { st -> st.copy(cloudRegion = region) } }, Modifier.fillMaxWidth(), label = { Text("Region, such as eastus") }, singleLine = true)
             }
             "obsidian" -> ObsidianPage(s, openTemplate)
+            "weekly" -> WeeklyPanel()
             "backup" -> BackupPanel(Modifier.padding(horizontal = 4.dp))
+            "ai" -> AiPanel()
             "updates" -> UpdateGroup()
         }
     }
