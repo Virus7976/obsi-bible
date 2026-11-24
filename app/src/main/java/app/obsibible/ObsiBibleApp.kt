@@ -100,6 +100,8 @@ class ObsiBibleApp : Application(), app.obsi.core.ObsiHost {
         }
         // The two Bible templates, once, when there are no templates yet.
         settings.update { app.obsibible.obsidian.VerseNote.seeded(it) }
+        // Notes from before the shared Obsi folder move into it once, in the background.
+        appScope.launch(Dispatchers.IO) { app.obsibible.obsidian.FolderMove.run(this@ObsiBibleApp) }
         vaults = VaultStore(this) { settings.value.vaultFolders }
         updates = SelfUpdate(this, settings)
         bibles = Bibles(this)
@@ -124,7 +126,7 @@ class ObsiBibleApp : Application(), app.obsi.core.ObsiHost {
         // Every highlight goes into the vault's highlights files, a moment after it changes.
         @OptIn(kotlinx.coroutines.FlowPreview::class)
         appScope.launch(Dispatchers.IO) {
-            kotlinx.coroutines.flow.combine(marks.all, kotlinx.coroutines.flow.combine(settings.state, prefs.state) { _, p -> Triple(vaultTree(), p.highlightsFile, p.highlightsFolder) }.distinctUntilChanged()) { m, s -> m to s }
+            kotlinx.coroutines.flow.combine(marks.all, kotlinx.coroutines.flow.combine(settings.state, prefs.state) { _, p -> Triple(vaultTree(), p.highlightsFile && p.foldersVersion >= 1, highlightsFolder()) }.distinctUntilChanged()) { m, s -> m to s }
                 .debounce(1500)
                 .collect { (m, st) ->
                     val (tree, on, folder) = st
@@ -144,6 +146,10 @@ class ObsiBibleApp : Application(), app.obsi.core.ObsiHost {
             }
         })
     }
+
+    /** The vault folder for the highlights files: the one picked in settings, or Obsi/Bible/Highlights. */
+    fun highlightsFolder(): String =
+        prefs.value.highlightsFolder.trim().trim('/').ifBlank { app.obsi.core.obsidian.ObsiFolder.of(settings.value, "Highlights") }
 
     /** The vault of the settings file from before 0.13, as its Obsidian name and folder link. */
     private fun oldVault(): Pair<String, String>? = runCatching {

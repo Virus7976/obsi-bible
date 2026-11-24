@@ -37,7 +37,10 @@ data class BiblePrefs(
     val lastColor: Int = 0,
     /** Every highlight is kept in one Markdown file per book in this vault folder. */
     val highlightsFile: Boolean = true,
-    val highlightsFolder: String = "Bible/Highlights",
+    /** Empty means the shared Obsi folder: Obsi/Bible/Highlights. */
+    val highlightsFolder: String = "",
+    /** 1 once the notes from before the shared Obsi folder were moved into it. */
+    val foldersVersion: Int = 0,
     val clipFolder: String = "Bible",
     val clipAppend: Boolean = false,
     val clipFile: String = "Bible highlights",

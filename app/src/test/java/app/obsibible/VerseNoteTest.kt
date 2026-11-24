@@ -61,4 +61,16 @@ class VerseNoteTest {
         assertEquals(VerseNote.VERSE_ID, s.selectedTemplateId)
         assertEquals(s, VerseNote.seeded(s))
     }
+    @Test fun newTemplatesSaveToTheObsiFolder() {
+        app.obsi.core.Brand.init(app.obsi.core.ObsiApp.Bible)
+        val s = VerseNote.seeded(AppSettings(templates = emptyList()))
+        assertEquals(listOf("Obsi/Bible", "Obsi/Bible"), s.templates.map { it.path })
+    }
+
+    @Test fun oldBibleTemplatesMoveButOthersStay() {
+        app.obsi.core.Brand.init(app.obsi.core.ObsiApp.Bible)
+        val mine = ClipTemplate("t", "Mine", path = "Bible")
+        val s = AppSettings(templates = listOf(VerseNote.VERSE, VerseNote.RUNNING.copy(path = "Study"), mine))
+        assertEquals(listOf("Obsi/Bible", "Study", "Bible"), VerseNote.toObsiFolder(s).templates.map { it.path })
+    }
 }

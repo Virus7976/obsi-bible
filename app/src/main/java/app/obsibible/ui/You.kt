@@ -296,7 +296,7 @@ fun NotesTab(openRef: (Ref) -> Unit) {
             app.vaultTree().isBlank() -> "Pick your vault in Settings, and every highlight is saved to Obsidian."
             !settings.highlightsFile -> "Highlights are not saved to a file. Turn it on in Settings, Obsidian."
             syncError != null -> syncError!!
-            else -> "Every highlight is saved to ${settings.highlightsFolder}, one file per book."
+            else -> "Every highlight is saved to ${app.highlightsFolder()}, one file per book."
         }
         Text(where, color = if (syncError != null) scheme.error else scheme.onSurfaceVariant, fontSize = 14.sp,
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 2.dp))

@@ -1,6 +1,7 @@
 package app.obsibible.obsidian
 
 import app.obsi.core.data.AppSettings
+import app.obsi.core.obsidian.ObsiFolder
 import app.obsi.core.data.ClipTemplate
 import app.obsi.core.data.ObsidianText
 import app.obsi.core.data.TemplateProperty
@@ -179,9 +180,19 @@ object VerseNote {
         }
     }
 
-    /** The shared template list with the two Bible templates added once, when it has none of its own. */
+    /** The shared template list with the two Bible templates added once, when it has none of its own. They save to Obsi/Bible. */
     fun seeded(s: AppSettings): AppSettings {
         if (s.templates.any { it.id == VERSE_ID || it.id == RUNNING_ID } || s.templates.isNotEmpty()) return s
-        return s.copy(templates = BUILT_IN, selectedTemplateId = VERSE_ID)
+        val folder = ObsiFolder.of(s)
+        return s.copy(templates = BUILT_IN.map { it.copy(path = folder) }, selectedTemplateId = VERSE_ID)
     }
+
+    /** The Bible templates still on the old "Bible" folder go to Obsi/Bible. True when one changed. */
+    fun toObsiFolder(s: AppSettings): AppSettings = s.copy(templates = s.templates.map {
+        if ((it.id == VERSE_ID || it.id == RUNNING_ID) && it.path.trim('/') == OLD_FOLDER) it.copy(path = ObsiFolder.of(s)) else it
+    })
+
+    /** Where Bible notes went before the shared Obsi folder. */
+    const val OLD_FOLDER = "Bible"
+    const val OLD_HIGHLIGHTS = "Bible/Highlights"
 }

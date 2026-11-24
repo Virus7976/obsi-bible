@@ -97,9 +97,9 @@ fun BibleSettingsScreen(id: String, onBack: () -> Unit, openSetup: () -> Unit) {
                     }
                     Section("Highlights file", footer = "One Markdown file per book in your vault, with every highlight and note. It updates by itself.") {
                         SwitchRow("Save every highlight to a file", null, s.highlightsFile) { v -> set { it.copy(highlightsFile = v) } }
-                        var hf by remember { mutableStateOf(s.highlightsFolder) }
+                        var hf by remember { mutableStateOf(app.highlightsFolder()) }
                         OutlinedTextField(
-                            hf, { hf = it; set { st -> st.copy(highlightsFolder = it.trim().trim('/').ifEmpty { "Bible/Highlights" }) } },
+                            hf, { hf = it; set { st -> st.copy(highlightsFolder = it.trim().trim('/')) } },
                             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), label = { Text("Folder in the vault") }, singleLine = true, enabled = s.highlightsFile,
                         )
                         val synced by app.highlightsSynced.collectAsState()
