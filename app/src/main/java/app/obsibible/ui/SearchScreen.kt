@@ -99,7 +99,7 @@ import kotlinx.coroutines.withContext
 @Composable
 fun SearchScreen(onOpen: (Ref) -> Unit, onBack: (() -> Unit)?, autofocus: Boolean) {
     val app = LocalApp.current
-    val s by app.settings.state.collectAsState()
+    val s by app.prefs.state.collectAsState()
     val bibleVersion by app.bibles.version.collectAsState()
     var field by remember { mutableStateOf(TextFieldValue("")) }
     val q = field.text
@@ -163,7 +163,7 @@ fun SearchScreen(onOpen: (Ref) -> Unit, onBack: (() -> Unit)?, autofocus: Boolea
     fun remember(text: String) {
         val t = text.trim()
         if (t.isEmpty()) return
-        app.settings.update { st -> st.copy(recentSearches = (listOf(t) + st.recentSearches.filter { !it.equals(t, true) }).take(30)) }
+        app.prefs.update { st -> st.copy(recentSearches = (listOf(t) + st.recentSearches.filter { !it.equals(t, true) }).take(30)) }
     }
 
     fun open(ref: Ref, text: String = q) {

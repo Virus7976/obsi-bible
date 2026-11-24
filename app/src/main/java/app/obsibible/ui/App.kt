@@ -87,17 +87,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.obsibible.ObsiBibleApp
 import app.obsibible.bible.Ref
-import app.obsibible.update.UpdateNotice
-import app.obsibible.update.UpdateState
+import app.obsi.core.ui.MarginaliaTheme
+import app.obsi.core.ui.FloatingTabs
+import app.obsi.core.ui.TabItem
+import app.obsi.core.ui.TemplateEditorScreen
+import app.obsi.core.update.UpdateState
+import app.obsi.core.ui.SettingsScreen as ObsiSettingsScreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 val LocalApp = staticCompositionLocalOf<ObsiBibleApp> { error("no app") }
 
-/** The five tabs along the bottom. */
+/** The tabs along the bottom. The Bible itself opens on top of them, like an article in ObsiRead. */
 enum class Tab(val label: String, val icon: ImageVector, val on: ImageVector) {
     Home("Home", Icons.Outlined.Home, Icons.Filled.Home),
-    Bible("Bible", Icons.Outlined.Book, Icons.Filled.Book),
     Notes("Notes", Icons.AutoMirrored.Outlined.StickyNote2, Icons.AutoMirrored.Filled.StickyNote2),
     Search("Search", Icons.Outlined.Search, Icons.Filled.Search),
     You("You", Icons.Outlined.AccountCircle, Icons.Filled.AccountCircle),
@@ -112,38 +115,32 @@ sealed interface Screen {
     data object Setup : Screen
     data object Stats : Screen
     data class Template(val id: String) : Screen
+    /** One of Obsi Bible's own settings pages. */
+    data class BiblePage(val id: String) : Screen
+    /** The Bible reader, on top of the tabs, with no tab bar. */
+    data object Reader : Screen
 }
 
 @Composable
 fun AppRoot(app: ObsiBibleApp) {
     val settings by app.settings.state.collectAsState()
-    // Light, dark or black picked in another Obsi app shows here when you come back.
-    val lifecycle = androidx.compose.ui.platform.LocalLifecycleOwner.current.lifecycle
-    val styleScope = androidx.compose.runtime.rememberCoroutineScope()
-    androidx.compose.runtime.DisposableEffect(lifecycle) {
-        val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
-            if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) styleScope.launch { app.settings.pullStyle(app) }
-        }
-        lifecycle.addObserver(obs)
-        onDispose { lifecycle.removeObserver(obs) }
-    }
     CompositionLocalProvider(LocalApp provides app) {
-        ObsiBibleTheme(settings) {
+        MarginaliaTheme(settings) {
             // After an update: what changed, one time.
             WhatsNewAfterUpdate()
             ObsiOnLeave()
             val stack = remember { mutableStateListOf<Screen>(Screen.Tabs) }
-            var tab by remember { mutableStateOf(Tab.Bible) }
+            var tab by remember { mutableStateOf(Tab.Home) }
             val holder = rememberSaveableStateHolder()
             fun push(s: Screen) { if (stack.last() != s) stack.add(s) }
             fun pop() { if (stack.size > 1) stack.removeAt(stack.lastIndex) }
             fun openRef(r: Ref) {
-                app.settings.update { it.copy(lastRef = r.key) }
+                app.prefs.update { it.copy(lastRef = r.key) }
                 while (stack.size > 1) stack.removeAt(stack.lastIndex)
-                tab = Tab.Bible
+                stack.add(Screen.Reader)
             }
             BackHandler(enabled = stack.size > 1) { pop() }
-            BackHandler(enabled = stack.size == 1 && tab != Tab.Bible) { tab = Tab.Bible }
+            BackHandler(enabled = stack.size == 1 && tab != Tab.Home) { tab = Tab.Home }
 
             // A verse link from Obsidian opens in the reader.
             val linked by app.openRef.collectAsState()
@@ -151,8 +148,7 @@ fun AppRoot(app: ObsiBibleApp) {
 
             // The setup guide opens by itself once, on the first start.
             LaunchedEffect(Unit) { if (!app.settings.value.onboarded) push(Screen.Setup) }
-            AskForNotifications(app)
-            UpdatePrompt(app, openSettings = { push(Screen.Settings) })
+            UpdatePrompt(app)
 
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 Column(Modifier.fillMaxSize()) {
@@ -176,7 +172,14 @@ fun AppRoot(app: ObsiBibleApp) {
                               Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
                                 when (screen) {
                                     Screen.Tabs -> Tabs(tab, onTab = { tab = it }, push = ::push, openRef = ::openRef)
-                                    Screen.Settings -> SettingsScreen(onBack = ::pop, openSetup = { push(Screen.Setup) }, openTemplate = { push(Screen.Template(it)) })
+                                    Screen.Reader -> ReaderScreen(push = ::push, onBack = ::pop)
+                                    Screen.Settings -> ObsiSettingsScreen(
+                                        onBack = ::pop,
+                                        onEditTemplate = { push(Screen.Template(it)) },
+                                        appPages = BibleSettingsPages,
+                                        onAppPage = { push(Screen.BiblePage(it)) },
+                                    )
+                                    is Screen.BiblePage -> BibleSettingsScreen(screen.id, onBack = ::pop, openSetup = { push(Screen.Setup) })
                                     Screen.Search -> SearchScreen(onOpen = ::openRef, onBack = ::pop, autofocus = true)
                                     Screen.Versions -> VersionsScreen(onBack = ::pop, openSetup = { push(Screen.Setup) })
                                     Screen.Setup -> SetupScreen(onDone = ::pop)
@@ -187,53 +190,25 @@ fun AppRoot(app: ObsiBibleApp) {
                             }
                         }
                     }
-                    UpdateBar(app)
                 }
             }
         }
     }
 }
 
-/** Asks once for permission to show notifications, so update notices can reach the user. */
+/** A new version was found: say so once, with what changed. The download shows in the notifications. */
 @Composable
-private fun AskForNotifications(app: ObsiBibleApp) {
-    if (Build.VERSION.SDK_INT < 33) return
-    val s by app.settings.state.collectAsState()
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
-    LaunchedEffect(Unit) {
-        if (!s.askedNotifications && !UpdateNotice.canNotify(app)) {
-            app.settings.update { it.copy(askedNotifications = true) }
-            launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
-        }
-    }
-}
-
-@Composable
-private fun UpdatePrompt(app: ObsiBibleApp, openSettings: () -> Unit) {
+private fun UpdatePrompt(app: ObsiBibleApp) {
     val update by app.updates.state.collectAsState()
-    val tapped by app.updateTapped.collectAsState()
     var later by remember { mutableStateOf<String?>(null) }
-
-    // The update notification was tapped: show the update, or start it straight away.
-    LaunchedEffect(tapped) {
-        val install = tapped ?: return@LaunchedEffect
-        app.updateTapped.value = null
-        var info = (app.updates.state.value as? UpdateState.Available)?.info
-        if (info == null) info = runCatching { withContext(Dispatchers.IO) { app.updates.checkNow() } }.getOrNull()
-        if (info == null) { openSettings(); return@LaunchedEffect }
-        if (install) app.updates.installFlow(info) else later = null
-    }
-
     val info = (update as? UpdateState.Available)?.info ?: return
     if (later == info.version) return
     AlertDialog(
         onDismissRequest = { later = info.version },
-        title = { Text("Version ${info.version} is ready") },
+        title = { Text("Update ready: ${info.version}") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                Text("You have ${app.updates.currentVersion}.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                val notes = cleanNotes(info.notes)
-                if (notes.isNotBlank()) { Spacer(Modifier.height(12.dp)); Text(notes) }
+                Text(cleanNotes(info.notes).ifBlank { "A new version is ready." })
             }
         },
         confirmButton = { TextButton(onClick = { later = info.version; app.updates.installFlow(info) }) { Text("Install") } },
@@ -256,36 +231,6 @@ fun cleanNotes(notes: String): String {
     return out.joinToString("\n")
 }
 
-/** A slim bar at the bottom while an update downloads and installs. */
-@Composable
-private fun UpdateBar(app: ObsiBibleApp) {
-    val st by app.updates.state.collectAsState()
-    val show = st is UpdateState.Downloading || st is UpdateState.Installing || st is UpdateState.Ready
-    AnimatedVisibility(show) {
-        val scheme = MaterialTheme.colorScheme
-        Column(Modifier.fillMaxWidth().background(scheme.surfaceContainer).navigationBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp)) {
-            when (val u = st) {
-                is UpdateState.Downloading -> {
-                    val pct = if (u.total > 0) (u.done * 100 / u.total).toInt() else 0
-                    Text("Downloading ${u.info.version} · $pct%", fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(8.dp))
-                    if (u.total > 0) LinearProgressIndicator(progress = { u.done / u.total.toFloat() }, Modifier.fillMaxWidth()) else LinearProgressIndicator(Modifier.fillMaxWidth())
-                }
-                is UpdateState.Installing -> {
-                    Text("Installing ${u.info.version}", fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(8.dp))
-                    LinearProgressIndicator(Modifier.fillMaxWidth())
-                }
-                is UpdateState.Ready -> Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Version ${u.info.version} is downloaded", Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-                    TextButton(onClick = { app.updates.install(u) }) { Text("Install") }
-                }
-                else -> Unit
-            }
-        }
-    }
-}
-
 @Composable
 private fun Tabs(tab: Tab, onTab: (Tab) -> Unit, push: (Screen) -> Unit, openRef: (Ref) -> Unit) {
     Column(Modifier.fillMaxSize()) {
@@ -295,7 +240,6 @@ private fun Tabs(tab: Tab, onTab: (Tab) -> Unit, push: (Screen) -> Unit, openRef
                 tabState.SaveableStateProvider(t.name) {
                     when (t) {
                         Tab.Home -> HomeTab(openRef = openRef, openSearch = { onTab(Tab.Search) }, openNotes = { onTab(Tab.Notes) }, openStats = { push(Screen.Stats) })
-                        Tab.Bible -> BibleTab(openSearch = { push(Screen.Search) }, openVersions = { push(Screen.Versions) }, onBack = { onTab(Tab.Home) })
                         Tab.Search -> SearchScreen(onOpen = openRef, onBack = null, autofocus = false)
                         Tab.You -> YouTab(openSettings = { push(Screen.Settings) }, openRef = openRef)
                         Tab.Notes -> NotesTab(openRef = openRef)
@@ -306,63 +250,51 @@ private fun Tabs(tab: Tab, onTab: (Tab) -> Unit, push: (Screen) -> Unit, openRef
         // The keyboard covers the tabs anyway. Hiding them stops the space being counted twice.
         @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
         val typing = WindowInsets.isImeVisible
-        val appRef = LocalApp.current
-        // While reading, the phone's own bars hide too. A swipe from the edge shows them for a moment.
-        val hostView = androidx.compose.ui.platform.LocalView.current
-        val fullScreen = tab == Tab.Bible && appRef.reading.collectAsState().value
-        LaunchedEffect(fullScreen) {
-            val window = (hostView.context as? android.app.Activity)?.window ?: return@LaunchedEffect
-            val bars = androidx.core.view.WindowCompat.getInsetsController(window, hostView)
-            bars.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            if (fullScreen) bars.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
-            else bars.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
-        }
-        androidx.compose.runtime.DisposableEffect(Unit) {
-            onDispose {
-                (hostView.context as? android.app.Activity)?.window?.let { w ->
-                    androidx.core.view.WindowCompat.getInsetsController(w, hostView).show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
-                }
-            }
-        }
-        val reading by appRef.reading.collectAsState()
-        LaunchedEffect(tab) { if (tab != Tab.Bible) appRef.reading.value = false }
         androidx.compose.animation.AnimatedVisibility(
-            visible = !typing && !(tab == Tab.Bible && reading),
+            visible = !typing,
             enter = androidx.compose.animation.expandVertically(androidx.compose.animation.core.tween(220)),
             exit = androidx.compose.animation.shrinkVertically(androidx.compose.animation.core.tween(220)),
         ) { BottomTabs(tab, onTab) }
     }
 }
 
+/** The Bible reader as its own screen. While you read, the phone's own bars hide too; a swipe from the edge shows them. */
 @Composable
-private fun BottomTabs(tab: Tab, onTab: (Tab) -> Unit) {
-    val scheme = MaterialTheme.colorScheme
-    val update by LocalApp.current.updates.state.collectAsState()
-    val haptic = LocalHapticFeedback.current
-    Column(Modifier.fillMaxWidth().background(scheme.background).navigationBarsPadding()) {
-        HorizontalDivider(color = scheme.outlineVariant, thickness = 1.dp)
-        Row(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-            Tab.entries.forEach { t ->
-                val on = t == tab
-                val color = if (on) scheme.onBackground else scheme.onSurfaceVariant
-                Column(
-                    Modifier.weight(1f).clickable(remember { MutableInteractionSource() }, null) {
-                        if (t != tab) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        onTab(t)
-                    },
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    Box {
-                        Icon(if (on) t.on else t.icon, t.label, Modifier.size(28.dp), tint = color)
-                        // A green dot on You when an update is waiting.
-                        if (t == Tab.You && update is UpdateState.Available) Box(Modifier.align(Alignment.TopEnd).size(9.dp).clip(androidx.compose.foundation.shape.CircleShape).background(Ink.dot))
-                    }
-                    Text(t.label, color = color, fontSize = 14.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium)
-                }
+private fun ReaderScreen(push: (Screen) -> Unit, onBack: () -> Unit) {
+    val appRef = LocalApp.current
+    val hostView = androidx.compose.ui.platform.LocalView.current
+    val fullScreen by appRef.reading.collectAsState()
+    LaunchedEffect(fullScreen) {
+        val window = (hostView.context as? android.app.Activity)?.window ?: return@LaunchedEffect
+        val bars = androidx.core.view.WindowCompat.getInsetsController(window, hostView)
+        bars.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        if (fullScreen) bars.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+        else bars.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+    }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose {
+            appRef.reading.value = false
+            (hostView.context as? android.app.Activity)?.window?.let { w ->
+                androidx.core.view.WindowCompat.getInsetsController(w, hostView).show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
             }
         }
     }
+    app.obsi.core.ui.ReaderTheme(app.obsi.core.ui.LocalSettings.current.readerTheme) {
+        BibleTab(openSearch = { push(Screen.Search) }, openVersions = { push(Screen.Versions) }, onBack = onBack)
+    }
+}
+
+/** The tabs: the floating bar every Obsi app has. A dot on You when an update is waiting. */
+@Composable
+private fun BottomTabs(tab: Tab, onTab: (Tab) -> Unit) {
+    val update by LocalApp.current.updates.state.collectAsState()
+    val haptic = LocalHapticFeedback.current
+    FloatingTabs(
+        tabs = Tab.entries.map { t -> TabItem(t.name, t.label, if (t == tab) t.on else t.icon, badge = if (t == Tab.You && update is UpdateState.Available) "" else null) },
+        selected = tab.name,
+        onSelect = { id -> val t = Tab.valueOf(id); if (t != tab) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); onTab(t) },
+        modifier = Modifier.navigationBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp),
+    )
 }
 
 /** A title row with a back arrow, used on screens that open on top. */

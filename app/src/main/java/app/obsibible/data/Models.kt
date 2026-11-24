@@ -3,21 +3,13 @@ package app.obsibible.data
 import kotlinx.serialization.Serializable
 
 /**
- * Everything the user can set. Kept on the phone in settings.json.
- * API keys live here too. The file is never backed up and never leaves the phone.
+ * What only Obsi Bible sets. Kept on the phone in bible.json. The look, Obsidian, templates and updates are
+ * in the shared settings. API keys live here too. The file is never backed up and never leaves the phone.
  */
 @Serializable
-data class AppSettings(
-    // look
-    val appearance: String = "dark", // auto | light | dark | oled
-    /** When light, dark or black was last picked by hand, here or in another Obsi app. */
-    val styleAt: Long = 0L,
-    val readerFontSize: Float = 20f,
-    val lineHeight: Float = 1.4f,
+data class BiblePrefs(
     /** The words of Jesus in red. */
     val redLetters: Boolean = true,
-    /** Set once the 0.6 reader look moved old line spacing to the new default. */
-    val lookV3: Boolean = false,
     // reading
     val bible: String = "BSB",
     val lastRef: String = "JHN.1",
@@ -41,26 +33,11 @@ data class AppSettings(
     val apiBibleKey: String = "",
     // API.Bible Bibles the user added: "id|abbreviation|name|copyright"
     val onlineBibles: List<String> = emptyList(),
-    // false until the setup guide was finished or skipped once
-    val onboarded: Boolean = false,
-    // updates
-    val autoCheckUpdates: Boolean = true,
-    val updateRepo: String = "Virus7976/obsi-bible",
-    val updateToken: String = "",
-    val updateMirror: String = "",
-    val ignoredVersion: String = "",
-    val installMethod: String = "system", // system | shizuku | adb
-    val lastUpdateCheck: Long = 0L,
-    val notifiedVersion: String = "",
-    val askedNotifications: Boolean = false,
     // highlights
     val lastColor: Int = 0,
-    // Obsidian: the vault folder picked with Android's folder picker, and how notes are made
-    val vaultTree: String = "",
     /** Every highlight is kept in one Markdown file per book in this vault folder. */
     val highlightsFile: Boolean = true,
     val highlightsFolder: String = "Bible/Highlights",
-    val vaultName: String = "",
     val clipFolder: String = "Bible",
     val clipAppend: Boolean = false,
     val clipFile: String = "Bible highlights",
@@ -70,11 +47,6 @@ data class AppSettings(
     // The vault note used as the template for new notes ("" = built in), and its name.
     val clipVaultTemplate: String = "",
     val clipVaultTemplateName: String = "",
-    /** Note templates, as in ObsiTube and Obsidian's Web Clipper. Empty until the built-in ones are added. */
-    val templates: List<ClipTemplate> = emptyList(),
-    val selectedTemplateId: String = "",
-    /** Tags added to every note sent to Obsidian. */
-    val autoTags: List<String> = emptyList(),
 )
 
 @Serializable

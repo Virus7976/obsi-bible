@@ -5,7 +5,7 @@ import app.obsi.core.data.HttpWords
 import app.obsi.core.ui.AllAppsReview
 import app.obsi.core.ui.FromOtherApps
 
-import app.obsibible.obsidian.Sender
+import app.obsi.core.obsidian.Sender
 import app.obsibible.obsidian.Clip
 import app.obsibible.data.Mark
 import androidx.compose.ui.text.style.TextOverflow
@@ -81,7 +81,7 @@ private val DailyVerses = listOf(
 @Composable
 fun HomeTab(openRef: (Ref) -> Unit, openSearch: () -> Unit, openNotes: () -> Unit = {}, openStats: () -> Unit = {}) {
     val app = LocalApp.current
-    val s by app.settings.state.collectAsState()
+    val s by app.prefs.state.collectAsState()
     val version by app.bibles.version.collectAsState()
     val marks by app.marks.all.collectAsState()
     val context = LocalContext.current
@@ -180,7 +180,7 @@ fun HomeTab(openRef: (Ref) -> Unit, openSearch: () -> Unit, openNotes: () -> Uni
             }
         } else {
             Spacer(Modifier.height(28.dp))
-            Text("Hold a verse in the Bible tab to highlight it or add a note. Your newest ones show here.", color = scheme.onSurfaceVariant)
+            Text("Hold a verse while you read to highlight it or add a note. Your newest ones show here.", color = scheme.onSurfaceVariant)
         }
         Spacer(Modifier.height(28.dp))
         // The streak and this week, from every Obsi app on the phone.
@@ -213,7 +213,7 @@ private fun HomeMark(m: Mark, clip: Clip?, abbr: String, onClick: () -> Unit) {
 @Composable
 fun VersionsScreen(onBack: () -> Unit, openSetup: () -> Unit = {}) {
     val app = LocalApp.current
-    val s by app.settings.state.collectAsState()
+    val s by app.prefs.state.collectAsState()
     val installed by app.bibles.installed.collectAsState()
     val install by app.bibles.install.collectAsState()
     val scheme = MaterialTheme.colorScheme
@@ -245,7 +245,7 @@ fun VersionsScreen(onBack: () -> Unit, openSetup: () -> Unit = {}) {
                         id
                     }
                 }
-            }.onSuccess { id -> app.settings.update { it.copy(bible = id) } }
+            }.onSuccess { id -> app.prefs.update { it.copy(bible = id) } }
                 .onFailure { error = HttpWords.error(it, "That file could not be read.") }
         }
     }
@@ -258,7 +258,7 @@ fun VersionsScreen(onBack: () -> Unit, openSetup: () -> Unit = {}) {
             Spacer(Modifier.height(8.dp))
             installed.forEach { b ->
                 Row(
-                    Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).clickable { app.settings.update { it.copy(bible = b.id) }; onBack() }.padding(vertical = 14.dp),
+                    Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).clickable { app.prefs.update { it.copy(bible = b.id) }; onBack() }.padding(vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {

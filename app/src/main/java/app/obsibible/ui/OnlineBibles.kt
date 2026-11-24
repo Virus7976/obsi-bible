@@ -50,7 +50,7 @@ import kotlinx.coroutines.withContext
 @Composable
 fun OnlineBibles(openSetup: () -> Unit) {
     val app = LocalApp.current
-    val s by app.settings.state.collectAsState()
+    val s by app.prefs.state.collectAsState()
     val scheme = MaterialTheme.colorScheme
     val uri = LocalUriHandler.current
     val scope = rememberCoroutineScope()
@@ -82,7 +82,7 @@ fun OnlineBibles(openSetup: () -> Unit) {
     Text("ESV", style = MaterialTheme.typography.titleLarge)
     Text("Text and Crossway's audio. Up to 500 verses stay on the phone for offline use.", color = scheme.onSurfaceVariant)
     Spacer(Modifier.height(8.dp))
-    KeyField("ESV key", esv) { esv = it; app.settings.update { st -> st.copy(esvKey = it) } }
+    KeyField("ESV key", esv) { esv = it; app.prefs.update { st -> st.copy(esvKey = it) } }
     LinkRow("Get a free key at api.esv.org") { uri.openUri(SetupLinks.ESV_SIGNUP) }
 
     fun find(source: String, load: () -> List<RemoteBible>) {
@@ -99,7 +99,7 @@ fun OnlineBibles(openSetup: () -> Unit) {
     Text("API.Bible", style = MaterialTheme.typography.titleLarge)
     Text("Many Bibles. The Message shows if your key is allowed to use it.", color = scheme.onSurfaceVariant)
     Spacer(Modifier.height(8.dp))
-    KeyField("API.Bible key", ab) { ab = it; app.settings.update { st -> st.copy(apiBibleKey = it) } }
+    KeyField("API.Bible key", ab) { ab = it; app.prefs.update { st -> st.copy(apiBibleKey = it) } }
     LinkRow("Get a free key at api.bible") { uri.openUri(SetupLinks.API_BIBLE_SIGNUP) }
     keyStatus["API.Bible"]?.let { KeyStatus(it) { app.keyScan.rescan(scope, "API.Bible") } }
     if (ab.isNotBlank()) AddRow(if (finding == "API.Bible") "Looking…" else "Add a Bible from API.Bible") { find("API.Bible") { ApiBible.bibles(ab) } }
@@ -108,7 +108,7 @@ fun OnlineBibles(openSetup: () -> Unit) {
     Text("YouVersion", style = MaterialTheme.typography.titleLarge)
     Text("The YouVersion Platform. Which Bibles you get depends on your key.", color = scheme.onSurfaceVariant)
     Spacer(Modifier.height(8.dp))
-    KeyField("YouVersion app key", yv) { yv = it; app.settings.update { st -> st.copy(youVersionKey = it) } }
+    KeyField("YouVersion app key", yv) { yv = it; app.prefs.update { st -> st.copy(youVersionKey = it) } }
     LinkRow("Get a free key at platform.youversion.com") { uri.openUri(SetupLinks.YV_START) }
     keyStatus["YouVersion"]?.let { KeyStatus(it) { app.keyScan.rescan(scope, "YouVersion") } }
     if (yv.isNotBlank()) AddRow(if (finding == "YouVersion") "Looking…" else "Add a Bible from YouVersion") { find("YouVersion") { YouVersion.bibles(yv) } }
@@ -124,7 +124,7 @@ fun OnlineBibles(openSetup: () -> Unit) {
                 Text(p.getOrElse(1) { "" }, style = MaterialTheme.typography.titleMedium)
                 Text(p.getOrElse(2) { "" } + if (p[0].startsWith(YouVersion.PREFIX)) " · YouVersion" else " · API.Bible", color = scheme.onSurfaceVariant)
             }
-            IconButton(onClick = { app.settings.update { st -> st.copy(onlineBibles = st.onlineBibles - e) } }) { Icon(Icons.Rounded.Close, "Remove") }
+            IconButton(onClick = { app.prefs.update { st -> st.copy(onlineBibles = st.onlineBibles - e) } }) { Icon(Icons.Rounded.Close, "Remove") }
         }
     }
     error?.let { Spacer(Modifier.height(10.dp)); Text(it, color = scheme.error) }

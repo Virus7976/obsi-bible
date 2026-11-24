@@ -1,6 +1,6 @@
 package app.obsibible.bible
 
-import app.obsibible.data.SettingsStore
+import app.obsibible.data.PrefsStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
@@ -33,7 +33,7 @@ object MessageFinder {
  * and adds The Message to the Bible list by itself when the key is allowed to use it.
  */
 @OptIn(FlowPreview::class)
-class KeyScan(private val settings: SettingsStore, scope: CoroutineScope) {
+class KeyScan(private val settings: PrefsStore, scope: CoroutineScope) {
     private val _status = MutableStateFlow<Map<String, String>>(emptyMap())
     /** "API.Bible" or "YouVersion" to one sentence about that key. */
     val status: StateFlow<Map<String, String>> = _status.asStateFlow()

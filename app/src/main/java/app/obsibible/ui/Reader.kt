@@ -1,5 +1,19 @@
 package app.obsibible.ui
 
+import app.obsi.core.ui.ReadingSheet as ObsiReadingSheet
+import app.obsi.core.ui.ActionMenu
+import app.obsi.core.ui.QuickAction
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.rounded.TextFields
+import androidx.compose.material.icons.rounded.FormatColorText
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.foundation.shape.RoundedCornerShape
+import app.obsi.core.ui.readerTypeface as obsiTypeface
+
 import app.obsi.core.ui.CountTime
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -77,17 +91,19 @@ import app.obsibible.obsidian.Clip
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** The Bible tab: the chapter, with listen, search, version and the chapter pill. */
+/** The Bible reader: the chapter, with listen, search, version and the chapter pill. */
 @Composable
 fun BibleTab(openSearch: () -> Unit, openVersions: () -> Unit, onBack: () -> Unit = {}) {
     val app = LocalApp.current
-    val s by app.settings.state.collectAsState()
+    val s by app.prefs.state.collectAsState()
     val audio by app.audio.ui.collectAsState()
     val install by app.bibles.install.collectAsState()
     val bibleVersion by app.bibles.version.collectAsState()
     val installed by app.bibles.installed.collectAsState()
+    val look by app.settings.state.collectAsState()
     val scheme = MaterialTheme.colorScheme
     val context = LocalContext.current
+    val face = remember(look.readerFont, look.customFontPath, look.fontWeight) { obsiTypeface(context, look) }
     val ref = Ref.fromKey(s.lastRef) ?: Ref("JHN", 1)
     val focusVerse = Ref.fromKey(s.lastRef)?.verse ?: 0
     // Time spent reading, for the shared stats, by chapter.
@@ -136,21 +152,17 @@ fun BibleTab(openSearch: () -> Unit, openVersions: () -> Unit, onBack: () -> Uni
     LaunchedEffect(turn) {
         val t = turn ?: return@LaunchedEffect
         app.audio.turnedTo.value = null
-        if (audio.bible == s.bible && t.from == ref.chapterRef) app.settings.update { it.copy(lastRef = t.to.key) }
+        if (audio.bible == s.bible && t.from == ref.chapterRef) app.prefs.update { it.copy(lastRef = t.to.key) }
     }
 
-    fun go(r: Ref?) { r ?: return; app.settings.update { it.copy(lastRef = r.key) } }
+    fun go(r: Ref?) { r ?: return; app.prefs.update { it.copy(lastRef = r.key) } }
 
     val reading by app.reading.collectAsState()
     // Full screen: the tabs are gone, so the play bar keeps clear of the phone's own buttons.
-    Column(Modifier.fillMaxSize().then(if (reading) Modifier.navigationBarsPadding() else Modifier)) {
+    Column(Modifier.fillMaxSize().navigationBarsPadding()) {
         Row(Modifier.fillMaxWidth().statusBarsPadding().padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", Modifier.size(26.dp)) }
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
             Spacer(Modifier.weight(1f))
-            IconButton(onClick = { sheet = true }) { Icon(Icons.AutoMirrored.Outlined.VolumeUp, "Listen", Modifier.size(26.dp)) }
-            IconButton(onClick = openSearch) { Icon(Icons.Outlined.Search, "Search", Modifier.size(26.dp)) }
-            IconButton(onClick = { textSheet = true }) { Icon(Icons.Outlined.Pending, "Text size", Modifier.size(26.dp)) }
-            Spacer(Modifier.width(6.dp))
             Row(
                 Modifier.clip(CircleShape).background(scheme.surfaceContainer).clickable(onClick = openVersions).padding(horizontal = 12.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -158,6 +170,47 @@ fun BibleTab(openSearch: () -> Unit, openVersions: () -> Unit, onBack: () -> Uni
                 Icon(Icons.Outlined.Language, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(5.dp))
                 Text(abbreviation, style = MaterialTheme.typography.titleSmall, fontSize = 16.sp)
+            }
+            IconButton(onClick = openSearch) { Icon(Icons.Rounded.Search, "Search the Bible") }
+            // The ⋮ menu every Obsi app has: quick buttons you pick, then the rest.
+            var menu by remember { mutableStateOf(false) }
+            Box {
+                IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, "More") }
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, shape = RoundedCornerShape(24.dp)) {
+                    val quick = listOf(
+                        QuickAction("listen", "Listen", Icons.Rounded.Headphones, on = audio.playing) { menu = false; sheet = true },
+                        QuickAction("search", "Search", Icons.Rounded.Search) { menu = false; openSearch() },
+                        QuickAction("reading", "Reading", Icons.Rounded.TextFields, on = textSheet) { menu = false; textSheet = true },
+                        QuickAction("versions", "Bibles", Icons.Outlined.Language) { menu = false; openVersions() },
+                        QuickAction("red", "Red letters", Icons.Rounded.FormatColorText, on = s.redLetters) { app.prefs.update { it.copy(redLetters = !it.redLetters) } },
+                    )
+                    ActionMenu(
+                        quick, look.quickButtons ?: listOf("listen", "search", "reading", "versions"),
+                        onPicked = { keys -> app.settings.update { it.copy(quickButtons = keys) } },
+                    ) { _ ->
+                        DropdownMenuItem(
+                            text = { Text("Listen") },
+                            leadingIcon = { Icon(Icons.Rounded.Headphones, null) },
+                            onClick = { menu = false; sheet = true },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Reading settings") },
+                            leadingIcon = { Icon(Icons.Rounded.TextFields, null) },
+                            onClick = { menu = false; textSheet = true },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Bibles and versions") },
+                            leadingIcon = { Icon(Icons.Outlined.Language, null) },
+                            onClick = { menu = false; openVersions() },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Jesus' words in red") },
+                            leadingIcon = { Icon(Icons.Rounded.FormatColorText, null) },
+                            trailingIcon = { if (s.redLetters) Icon(Icons.Rounded.Check, "On", tint = scheme.primary) },
+                            onClick = { app.prefs.update { it.copy(redLetters = !it.redLetters) } },
+                        )
+                    }
+                }
             }
         }
 
@@ -215,7 +268,8 @@ fun BibleTab(openSearch: () -> Unit, openVersions: () -> Unit, onBack: () -> Uni
                             // The key comes from the chapter itself, never from the pill: while the next
                             // chapter loads, the old text must not be filed under the new name.
                             val shown = Ref(ch.book, ch.number)
-                            v.show(ch, "${s.bible}/${shown.key}/${colors.text}/${s.readerFontSize}/$bibleVersion/${credit.first.hashCode()}/${colors.words}", s.readerFontSize, s.lineHeight, colors, padH, with(density) { 64.dp.roundToPx() }, with(density) { 120.dp.roundToPx() })
+                            v.setFace(face)
+                            v.show(ch, "${s.bible}/${shown.key}/${colors.text}/${look.readerFontSize}/${look.lineHeight}/${look.readerFont}/$bibleVersion/${credit.first.hashCode()}/${colors.words}", look.readerFontSize, look.lineHeight, colors, padH, with(density) { 64.dp.roundToPx() }, with(density) { 120.dp.roundToPx() })
                             v.setSelected(selected)
                             v.setMarks(chapterMarks, openMark)
                             val following = audio.active && audio.bible == s.bible && audio.ref == shown
@@ -284,7 +338,7 @@ fun BibleTab(openSearch: () -> Unit, openVersions: () -> Unit, onBack: () -> Uni
                 color = m.color.takeIf { it >= 0 },
                 onColor = { c ->
                     app.marks.put(m.copy(color = c, updated = System.currentTimeMillis()))
-                    app.settings.update { it.copy(lastColor = c) }
+                    app.prefs.update { it.copy(lastColor = c) }
                 },
                 onNoColor = if (m.hasColor) ({
                     if (m.hasNote) app.marks.put(m.copy(color = -1, updated = System.currentTimeMillis())) else { app.marks.remove(m.id); openMark = null }
@@ -309,7 +363,7 @@ fun BibleTab(openSearch: () -> Unit, openVersions: () -> Unit, onBack: () -> Uni
                     if (ch != null) {
                         val (list, added) = Marks.paint(app.marks.all.value, s.bible, ref.book, ref.chapter, selected, c, ch.verses().toMap())
                         app.marks.set(list)
-                        app.settings.update { it.copy(lastColor = c) }
+                        app.prefs.update { it.copy(lastColor = c) }
                         selected = emptySet()
                         openMark = added.singleOrNull()?.id
                     }
@@ -375,7 +429,7 @@ fun BibleTab(openSearch: () -> Unit, openVersions: () -> Unit, onBack: () -> Uni
         onStart = { app.audio.play(s.bible, ref.chapterRef, page?.topVerse()?.takeIf { it > 1 } ?: 0) },
         onDismiss = { sheet = false },
     )
-    if (textSheet) TextSizeSheet { textSheet = false }
+    if (textSheet) ObsiReadingSheet(onDismiss = { textSheet = false }, behavior = false)
     noteFor?.let { id ->
         val m = allMarks.firstOrNull { it.id == id }
         if (m == null) noteFor = null else NoteSheet(
@@ -437,27 +491,4 @@ private fun copyVerses(context: Context, app: app.obsibible.ObsiBibleApp, bible:
 private fun shareVerses(context: Context, app: app.obsibible.ObsiBibleApp, bible: String, ref: Ref, verses: Set<Int>, abbr: String) {
     val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, versesText(app, bible, ref, verses, abbr))
     context.startActivity(Intent.createChooser(send, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-}
-
-/** Text size and line spacing, seen live on the page behind the sheet. */
-@Composable
-fun TextSizeSheet(onDismiss: () -> Unit) {
-    val app = LocalApp.current
-    val s by app.settings.state.collectAsState()
-    val scheme = MaterialTheme.colorScheme
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = scheme.surfaceContainer, dragHandle = { SheetHandle() }, scrimColor = androidx.compose.ui.graphics.Color.Transparent) {
-        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
-            Text("Text size", style = MaterialTheme.typography.titleMedium)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("A", fontFamily = SerifFont, fontSize = 16.sp)
-                Slider(s.readerFontSize, { v -> app.settings.update { it.copy(readerFontSize = v) } }, Modifier.weight(1f).padding(horizontal = 12.dp), valueRange = 15f..32f,
-                    colors = SliderDefaults.colors(thumbColor = scheme.onSurface, activeTrackColor = scheme.onSurface, inactiveTrackColor = scheme.surfaceContainerHighest))
-                Text("A", fontFamily = SerifFont, fontSize = 28.sp)
-            }
-            Spacer(Modifier.height(8.dp))
-            Text("Line spacing", style = MaterialTheme.typography.titleMedium)
-            Slider(s.lineHeight, { v -> app.settings.update { it.copy(lineHeight = v) } }, valueRange = 1.1f..2.0f,
-                colors = SliderDefaults.colors(thumbColor = scheme.onSurface, activeTrackColor = scheme.onSurface, inactiveTrackColor = scheme.surfaceContainerHighest))
-        }
-    }
 }

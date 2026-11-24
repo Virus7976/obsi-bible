@@ -80,8 +80,15 @@ class PageView(context: Context) : NestedScrollView(context) {
     var onReading: (Boolean) -> Unit = {}
     var onScrolled: () -> Unit = {}
 
-    private val serif: Typeface = ResourcesCompat.getFont(context, R.font.literata) ?: Typeface.SERIF
-    private val serifItalic: Typeface = ResourcesCompat.getFont(context, R.font.literata_italic) ?: Typeface.create(Typeface.SERIF, Typeface.ITALIC)
+    private var serif: Typeface = ResourcesCompat.getFont(context, R.font.literata) ?: Typeface.SERIF
+    private var serifItalic: Typeface = ResourcesCompat.getFont(context, R.font.literata_italic) ?: Typeface.create(Typeface.SERIF, Typeface.ITALIC)
+
+    /** The reader font picked in reading settings, as in the other Obsi apps. Set it before [show]. */
+    fun setFace(face: Typeface?) {
+        if (face == null || face == serif) return
+        serif = face
+        serifItalic = Typeface.create(face, Typeface.ITALIC)
+    }
 
     init {
         isFillViewport = true

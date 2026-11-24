@@ -2,7 +2,7 @@ package app.obsibible.ui
 import app.obsi.core.ui.otherHighlights
 import app.obsi.core.ui.rememberOtherHighlights
 
-import app.obsibible.obsidian.Sender
+import app.obsi.core.obsidian.Sender
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.combinedClickable
 import android.content.Intent
@@ -66,7 +66,7 @@ import app.obsibible.bible.Ref
 import app.obsibible.data.HighlightColors
 import app.obsibible.data.Mark
 import app.obsibible.obsidian.Clip
-import app.obsibible.update.UpdateState
+import app.obsi.core.update.UpdateState
 
 private enum class Feed(val label: String, val icon: ImageVector?) {
     All("All", null), Highlights("Highlights", Icons.Outlined.Brush), Notes("Notes", Icons.AutoMirrored.Outlined.StickyNote2)
@@ -259,7 +259,7 @@ fun NotesTab(openRef: (Ref) -> Unit) {
     var sort by remember { mutableStateOf(NoteSort.Book) }
     var tag by remember { mutableStateOf<String?>(null) }
     val scheme = MaterialTheme.colorScheme
-    val settings by app.settings.state.collectAsState()
+    val settings by app.prefs.state.collectAsState()
     val synced by app.highlightsSynced.collectAsState()
     val syncError by app.highlightsError.collectAsState()
     var menuFor by remember { mutableStateOf<Mark?>(null) }
@@ -293,7 +293,7 @@ fun NotesTab(openRef: (Ref) -> Unit) {
         }
         // Where the highlights go in Obsidian, in one line.
         val where = when {
-            settings.vaultTree.isBlank() -> "Pick your vault in Settings, and every highlight is saved to Obsidian."
+            app.vaultTree().isBlank() -> "Pick your vault in Settings, and every highlight is saved to Obsidian."
             !settings.highlightsFile -> "Highlights are not saved to a file. Turn it on in Settings, Obsidian."
             syncError != null -> syncError!!
             else -> "Every highlight is saved to ${settings.highlightsFolder}, one file per book."
@@ -317,7 +317,7 @@ fun NotesTab(openRef: (Ref) -> Unit) {
                     }
                     items(list, key = { it.id }) { m ->
                         val abbr = installed.firstOrNull { it.id == m.bible }?.abbreviation ?: m.bible
-                        val inFile = settings.highlightsFile && settings.vaultTree.isNotBlank() && syncError == null && synced >= m.updated
+                        val inFile = settings.highlightsFile && app.vaultTree().isNotBlank() && syncError == null && synced >= m.updated
                         NoteRow(m, abbr, inFile, onClick = { app.openMark.value = m.id; openRef(m.ref) }, onLongClick = { menuFor = m })
                     }
                 }

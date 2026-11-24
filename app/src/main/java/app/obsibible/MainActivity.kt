@@ -8,7 +8,6 @@ import androidx.activity.enableEdgeToEdge
 import app.obsi.core.link.Links
 import app.obsibible.bible.RefLinks
 import app.obsibible.ui.AppRoot
-import app.obsibible.update.UpdateNotice
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -28,11 +27,6 @@ class MainActivity : ComponentActivity() {
     /** Returns true when the intent went to another Obsi app, and this one has nothing to show. */
     private fun handle(intent: Intent?): Boolean {
         val app = application as ObsiBibleApp
-        if (intent?.action == UpdateNotice.ACTION_UPDATE) {
-            UpdateNotice.clear(this)
-            app.updateTapped.value = intent.getBooleanExtra(UpdateNotice.EXTRA_INSTALL, false)
-            return false
-        }
         // ObsiTube or ObsiRead asked to open one of our highlights.
         intent?.getStringExtra(Links.EXTRA_OPEN_ID)?.let { key ->
             intent.removeExtra(Links.EXTRA_OPEN_ID)

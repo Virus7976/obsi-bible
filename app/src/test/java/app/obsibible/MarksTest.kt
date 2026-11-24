@@ -102,28 +102,6 @@ class MarksTest {
         assertEquals(4, map2[4])
     }
 
-    @Test fun noteHasLinkFrontMatterAndQuote() {
-        val c = Clip(Ref("JHN", 3, 16, 17), "BSB", "Berean Standard Bible", "For God so loved\nthe world", note = "Grace.", tags = listOf("love", "gospel words"), at = 0L)
-        val n = NoteBuilder.build(c, append = false, folder = "/Bible/")
-        assertEquals("John 3.16-17", n.name)
-        assertEquals("Bible", n.folder)
-        assertTrue(n.markdown.contains("[John 3:16-17](obsibible://ref/JHN.3.16-17)"))
-        assertTrue(n.markdown.contains("> For God so loved\n> the world"))
-        assertTrue(n.markdown.contains("tags: [bible, love, gospel-words]"))
-        assertTrue(n.markdown.contains("Grace."))
-        assertFalse(n.markdown.contains("{{"))
-    }
-
-    @Test fun emptyNoteLeavesNoGap() {
-        val c = Clip(Ref("PSA", 23, 1), "BSB", "Berean Standard Bible", "The LORD is my shepherd", at = 0L)
-        val n = NoteBuilder.build(c, append = true, folder = "", appendFile = "Bible highlights")
-        assertEquals("Bible highlights", n.name)
-        assertTrue(n.append)
-        assertTrue(n.markdown.startsWith("## Psalm 23:1 · BSB"))
-        assertFalse(n.markdown.contains("\n\n\n"))
-        assertTrue(n.markdown.endsWith("\n"))
-    }
-
     @Test fun safeNames() {
         assertEquals("John 3.16", NoteBuilder.safeName("John 3:16"))
         assertEquals("a b", NoteBuilder.safeName("a/b"))

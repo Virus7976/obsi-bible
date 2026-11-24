@@ -43,37 +43,32 @@ abstract class JsonFileStore<T>(private val file: File) {
     }
 }
 
-class SettingsStore(context: Context) : JsonFileStore<AppSettings>(File(context.filesDir, "settings.json")) {
-    // Light or black picked before looks were shared counts from when it was saved.
-    private val _state = MutableStateFlow((readOrNull() ?: AppSettings()).let {
-        if (it.styleAt == 0L && it.appearance != AppSettings().appearance) it.copy(styleAt = File(context.filesDir, "settings.json").lastModified().coerceAtLeast(1L)) else it
-    })
-    val state: StateFlow<AppSettings> = _state.asStateFlow()
-    val value: AppSettings get() = _state.value
+/**
+ * Obsi Bible's own settings: the Bible you read, your place, voices, online Bible keys and the highlights
+ * file. The look, Obsidian, templates and updates are in the shared settings, like the other Obsi apps.
+ * Before 0.13 everything was in settings.json. The first start of 0.13 copies that file here once, so
+ * nothing you set is lost.
+ */
+class PrefsStore(context: Context) : JsonFileStore<BiblePrefs>(File(context.filesDir, "bible.json")) {
+    /** True on the first start after the move to the shared settings. The app moves the vault over then. */
+    val moved: Boolean
 
-    val isFirstRun: Boolean = readOrNull() == null
-
-    override fun encode(value: AppSettings) = storeJson.encodeToString(AppSettings.serializer(), value)
-    override fun decode(text: String) = storeJson.decodeFromString(AppSettings.serializer(), text)
-
-    /** A change made here. Picking light, dark or black is stamped, so the other Obsi apps take it too. */
-    fun update(block: (AppSettings) -> AppSettings) {
-        _state.update { old -> block(old).let { if (it.appearance != old.appearance) it.copy(styleAt = System.currentTimeMillis()) else it } }
-        persist(_state.value)
+    init {
+        val mine = File(context.filesDir, "bible.json")
+        val old = File(context.filesDir, "settings.json")
+        moved = !mine.exists() && old.exists()
+        if (moved) runCatching { old.copyTo(mine) }
     }
 
-    /** Light, dark or black from another Obsi app. It keeps that app's stamp. */
-    fun syncStyle(block: (AppSettings) -> AppSettings) {
+    private val _state = MutableStateFlow(readOrNull() ?: BiblePrefs())
+    val state: StateFlow<BiblePrefs> = _state.asStateFlow()
+    val value: BiblePrefs get() = _state.value
+
+    override fun encode(value: BiblePrefs) = storeJson.encodeToString(BiblePrefs.serializer(), value)
+    override fun decode(text: String) = storeJson.decodeFromString(BiblePrefs.serializer(), text)
+
+    fun update(block: (BiblePrefs) -> BiblePrefs) {
         _state.update(block)
         persist(_state.value)
-    }
-
-    /** Takes light, dark or black from the newest look in the other Obsi apps. */
-    suspend fun pullStyle(context: Context) {
-        val newest = app.obsi.core.share.SharedStyle.others(context).maxByOrNull { it.at } ?: return
-        if (newest.at <= value.styleAt) return
-        // Bible has no dusk. Dusk is closest to dark.
-        val mode = when (newest.appearance) { "light", "dark", "oled", "auto" -> newest.appearance; else -> "dark" }
-        syncStyle { it.copy(appearance = mode, styleAt = newest.at) }
     }
 }

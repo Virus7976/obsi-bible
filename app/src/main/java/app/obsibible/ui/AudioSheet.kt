@@ -79,7 +79,7 @@ fun AudioSheet(idleTitle: String, onStart: () -> Unit, onDismiss: () -> Unit) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state, containerColor = scheme.surfaceContainer, contentColor = scheme.onSurface, dragHandle = { SheetHandle() }) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 28.dp).padding(bottom = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Spacer(Modifier.height(12.dp))
-            val idle = remember(u.active, app.settings.state.collectAsState().value.audioSource) { engine.describe(app.settings.value.bible) }
+            val idle = remember(u.active, app.prefs.state.collectAsState().value.audioSource) { engine.describe(app.prefs.value.bible) }
             val voiceName = if (u.active) u.voiceName else idle.first
             val bibleTitle = if (u.active) u.title else idle.third
             val credit = if (u.active) u.credit else idle.second
@@ -161,7 +161,7 @@ fun AudioSheet(idleTitle: String, onStart: () -> Unit, onDismiss: () -> Unit) {
         }
     }
 
-    if (voices) VoicePicker(u.bible.ifBlank { app.settings.value.bible }) { voices = false }
+    if (voices) VoicePicker(u.bible.ifBlank { app.prefs.value.bible }) { voices = false }
     if (sleep) {
         val opts = listOf(0 to "Off", 5 to "5 minutes", 10 to "10 minutes", 15 to "15 minutes", 30 to "30 minutes", 45 to "45 minutes", 60 to "1 hour", SLEEP_END_OF_CHAPTER to "End of chapter")
         QuickSwitcher(
@@ -175,7 +175,7 @@ fun AudioSheet(idleTitle: String, onStart: () -> Unit, onDismiss: () -> Unit) {
 @Composable
 fun VoicePicker(bible: String, onDone: () -> Unit) {
     val app = LocalApp.current
-    val s = app.settings.value
+    val s = app.prefs.value
     var phone by remember { mutableStateOf<List<VoiceInfo>?>(null) }
     var cloud by remember { mutableStateOf<List<VoiceInfo>>(emptyList()) }
     var cloudError by remember { mutableStateOf<String?>(null) }
@@ -201,8 +201,8 @@ fun VoicePicker(bible: String, onDone: () -> Unit) {
         onPick = { c ->
             app.audio.phone.stopPreview()
             if (c.id == "settings") { onDone(); return@QuickSwitcher }
-            if (c.id.startsWith("phone:")) app.settings.update { it.copy(phoneVoice = c.id.removePrefix("phone:")) }
-            if (c.id.startsWith("cloud:")) app.settings.update { it.copy(cloudVoice = c.id.removePrefix("cloud:")) }
+            if (c.id.startsWith("phone:")) app.prefs.update { it.copy(phoneVoice = c.id.removePrefix("phone:")) }
+            if (c.id.startsWith("cloud:")) app.prefs.update { it.copy(cloudVoice = c.id.removePrefix("cloud:")) }
             app.audio.setSource(c.id)
             onDone()
         },

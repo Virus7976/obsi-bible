@@ -1,5 +1,7 @@
 package app.obsibible.ui
 
+import app.obsi.core.ui.OnboardingScreen as ObsiOnboardingScreen
+import app.obsi.core.ui.OnboardingStep
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -61,7 +63,7 @@ import app.obsibible.bible.EsvApi
 import app.obsibible.bible.Ref
 import app.obsibible.bible.RemoteBible
 import app.obsibible.bible.YouVersion
-import app.obsibible.obsidian.Sender
+import app.obsi.core.obsidian.Sender
 import app.obsibible.obsidian.VaultIndex
 import kotlinx.coroutines.Dispatchers
 import app.obsi.core.ObsiApp
@@ -92,82 +94,36 @@ object SetupLinks {
 fun addOnlineBible(app: ObsiBibleApp, id: String, abbreviation: String, name: String, copyright: String) {
     val entry = listOf(id, abbreviation, name, copyright).joinToString("|") { it.replace('|', '/').replace('\n', ' ') }
     val bibleId = if (id.startsWith(YouVersion.PREFIX)) id else ApiBible.PREFIX + id
-    app.settings.update { s -> s.copy(onlineBibles = s.onlineBibles.filterNot { it.substringBefore('|') == id } + entry, bible = bibleId) }
+    app.prefs.update { s -> s.copy(onlineBibles = s.onlineBibles.filterNot { it.substringBefore('|') == id } + entry, bible = bibleId) }
 }
 
 private fun isMessage(b: RemoteBible) = app.obsibible.bible.MessageFinder.isMessage(b)
 
 /**
- * The setup guide. It opens once on first start, and again from Settings or Versions.
- * Each page says why, gives the exact steps with a link for each, and checks the key.
+ * The setup guide, on the walk-through every Obsi app shares: what the app is, your vault, then the
+ * Bible's own steps. It opens once on first start, and again from Settings or Versions.
+ * Each Bible page says why, gives the exact steps with a link for each, and checks the key.
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SetupScreen(onDone: () -> Unit) {
     val app = LocalApp.current
-    val scheme = MaterialTheme.colorScheme
-    val pages = listOf("Welcome", "ESV", "The Message", "Voices", "Obsidian", "Done")
-    val pager = rememberPagerState { pages.size }
-    val scope = rememberCoroutineScope()
-    fun finish() { app.settings.update { it.copy(onboarded = true) }; onDone() }
+    ObsiOnboardingScreen(
+        pitch = "Read the Bible, listen to it read aloud, and keep your highlights and notes in your Obsidian vault.",
+        steps = listOf(
+            OnboardingStep("The ESV") { SetupPage { EsvPage() } },
+            OnboardingStep("The Message") { SetupPage { MessagePage() } },
+            OnboardingStep("Voices") { SetupPage { VoicesPage() } },
+        ),
+        onDone = { app.settings.update { it.copy(onboarded = true) }; onDone() },
+    )
+}
 
-    Column(Modifier.fillMaxSize().background(scheme.background).statusBarsPadding().navigationBarsPadding().imePadding()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(pages[pager.currentPage], style = MaterialTheme.typography.titleMedium, color = scheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-            if (pager.currentPage < pages.lastIndex) TextButton(onClick = ::finish) { Text("Close") }
-        }
-        // Step dots, tap one to jump to it.
-        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            pages.indices.forEach { i ->
-                Box(
-                    Modifier.weight(1f).height(4.dp).clip(CircleShape)
-                        .background(if (i <= pager.currentPage) scheme.onSurface else scheme.surfaceContainerHighest)
-                        .clickable { scope.launch { pager.animateScrollToPage(i) } },
-                )
-            }
-        }
-        HorizontalPager(pager, Modifier.weight(1f).fillMaxWidth(), beyondViewportPageCount = 1) { page ->
-            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 22.dp, vertical = 20.dp)) {
-                when (page) {
-                    0 -> WelcomePage()
-                    1 -> EsvPage()
-                    2 -> MessagePage()
-                    3 -> VoicesPage()
-                    4 -> ObsidianPage()
-                    else -> DonePage()
-                }
-            }
-        }
-        Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (pager.currentPage > 0) TextButton(onClick = { scope.launch { pager.animateScrollToPage(pager.currentPage - 1) } }) { Text("Back") }
-            Spacer(Modifier.weight(1f))
-            if (pager.currentPage in 1 until pages.lastIndex) TextButton(onClick = { scope.launch { pager.animateScrollToPage(pager.currentPage + 1) } }) { Text("Skip") }
-            Spacer(Modifier.width(8.dp))
-            Button(
-                onClick = { if (pager.currentPage == pages.lastIndex) finish() else scope.launch { pager.animateScrollToPage(pager.currentPage + 1) } },
-                colors = ButtonDefaults.buttonColors(containerColor = scheme.onSurface, contentColor = scheme.surface),
-                modifier = Modifier.height(50.dp),
-            ) { Text(if (pager.currentPage == pages.lastIndex) "Start reading" else if (pager.currentPage == 0) "Set up" else "Next", fontSize = 16.sp) }
-        }
-    }
+@Composable
+private fun SetupPage(content: @Composable () -> Unit) {
+    Column(Modifier.fillMaxWidth()) { content() }
 }
 
 // ---------- pages ----------
-
-@Composable
-private fun WelcomePage() {
-    val scheme = MaterialTheme.colorScheme
-    Text("Set up your Bibles", style = MaterialTheme.typography.headlineMedium)
-    Spacer(Modifier.height(12.dp))
-    Text("The BSB already works offline, with three recorded voices. Add more Bibles with free keys. This takes about five minutes.", color = scheme.onSurfaceVariant, fontSize = 17.sp)
-    Spacer(Modifier.height(24.dp))
-    Overview("ESV", "Text and Crossway's recording. Free key from Crossway.")
-    Overview("The Message", "Through API.Bible or YouVersion, if your key is allowed to use it.")
-    Overview("Better voices", "Natural Microsoft voices for Bibles on the phone. Free tier.")
-    Overview("Obsidian", "Save highlights and notes into your vault.")
-    Spacer(Modifier.height(18.dp))
-    Text("Every key stays on this phone. You can skip any step and come back from Settings.", color = scheme.onSurfaceVariant)
-}
 
 @Composable
 private fun Overview(title: String, text: String) {
@@ -184,7 +140,7 @@ private fun Overview(title: String, text: String) {
 @Composable
 private fun EsvPage() {
     val app = LocalApp.current
-    val s by app.settings.state.collectAsState()
+    val s by app.prefs.state.collectAsState()
     PageHead("ESV", "The English Standard Version, with Crossway's own audio.")
     Steps(
         "Make a free account and an app at api.esv.org." to SetupLinks.ESV_SIGNUP,
@@ -193,7 +149,7 @@ private fun EsvPage() {
         "Paste it below, then tap Check." to null,
     )
     KeyCheck(
-        label = "ESV key", value = s.esvKey, onValue = { v -> app.settings.update { it.copy(esvKey = v) } },
+        label = "ESV key", value = s.esvKey, onValue = { v -> app.prefs.update { it.copy(esvKey = v) } },
         check = { key -> EsvApi.chapter(key, Ref("JHN", 1)); "The key works. The ESV is now in your Bibles." },
     )
     Note("Crossway lets the app keep up to 500 verses for offline use. The audio streams, so it needs internet.")
@@ -203,7 +159,7 @@ private fun EsvPage() {
 @Composable
 private fun MessagePage() {
     val app = LocalApp.current
-    val s by app.settings.state.collectAsState()
+    val s by app.prefs.state.collectAsState()
     val scheme = MaterialTheme.colorScheme
     PageHead("The Message", "There is no free open copy. Two services can give it to you with a free key. Try one, or both.")
     Note("The Message has no audio here. Its licence does not allow a computer voice.")
@@ -218,7 +174,7 @@ private fun MessagePage() {
     )
     var abFound by remember { mutableStateOf<List<RemoteBible>>(emptyList()) }
     KeyCheck(
-        label = "API.Bible key", value = s.apiBibleKey, onValue = { v -> app.settings.update { it.copy(apiBibleKey = v) } },
+        label = "API.Bible key", value = s.apiBibleKey, onValue = { v -> app.prefs.update { it.copy(apiBibleKey = v) } },
         check = { key ->
             val list = ApiBible.bibles(key)
             abFound = list
@@ -243,7 +199,7 @@ private fun MessagePage() {
     )
     var yvFound by remember { mutableStateOf<List<RemoteBible>>(emptyList()) }
     KeyCheck(
-        label = "YouVersion app key", value = s.youVersionKey, onValue = { v -> app.settings.update { it.copy(youVersionKey = v) } },
+        label = "YouVersion app key", value = s.youVersionKey, onValue = { v -> app.prefs.update { it.copy(youVersionKey = v) } },
         check = { key ->
             val list = YouVersion.bibles(key)
             yvFound = list
@@ -265,7 +221,7 @@ private fun MessagePage() {
 @Composable
 private fun VoicesPage() {
     val app = LocalApp.current
-    val s by app.settings.state.collectAsState()
+    val s by app.prefs.state.collectAsState()
     PageHead("Better voices", "Microsoft's neural voices sound close to a real reader. They work for every Bible on the phone, such as the BSB.")
     Steps(
         "Make a free Azure account. The free tier covers about 500,000 letters a month." to SetupLinks.AZURE_FREE,
@@ -274,77 +230,17 @@ private fun VoicesPage() {
         "Paste both below, then tap Check." to null,
     )
     var region by remember { mutableStateOf(s.cloudRegion) }
-    OutlinedTextField(region, { region = it.trim().lowercase(); app.settings.update { st -> st.copy(cloudRegion = region) } }, Modifier.fillMaxWidth(), label = { Text("Region, such as eastus") }, singleLine = true)
+    OutlinedTextField(region, { region = it.trim().lowercase(); app.prefs.update { st -> st.copy(cloudRegion = region) } }, Modifier.fillMaxWidth(), label = { Text("Region, such as eastus") }, singleLine = true)
     Spacer(Modifier.height(10.dp))
     KeyCheck(
-        label = "Speech key", value = s.cloudKey, onValue = { v -> app.settings.update { it.copy(cloudKey = v) } },
+        label = "Speech key", value = s.cloudKey, onValue = { v -> app.prefs.update { it.copy(cloudKey = v) } },
         check = { key ->
-            if (app.settings.value.cloudRegion.isBlank()) throw IllegalStateException("Type the region first.")
-            val n = CloudSpeech.voices(key, app.settings.value.cloudRegion).size
+            if (app.prefs.value.cloudRegion.isBlank()) throw IllegalStateException("Type the region first.")
+            val n = CloudSpeech.voices(key, app.prefs.value.cloudRegion).size
             "The key works. $n voices are ready. Pick one in the audio sheet."
         },
     )
     Note("The phone's own voice works offline and needs no key.")
-}
-
-@Composable
-private fun ObsidianPage() {
-    val app = LocalApp.current
-    val s by app.settings.state.collectAsState()
-    val context = LocalContext.current
-    val scheme = MaterialTheme.colorScheme
-    val pickAt = rememberVaultPickerAt { VaultIndex.forget() }
-    val pick = { pickAt(null) }
-    val folder = remember(s.vaultTree) { if (s.vaultTree.isBlank()) null else Sender.folderName(context, s.vaultTree) }
-    // The vault another Obsi app already uses, so it is one tap here.
-    var others by remember { androidx.compose.runtime.mutableStateOf(emptyList<ObsiSetup>()) }
-    var locked by remember { androidx.compose.runtime.mutableStateOf(emptyList<ObsiApp>()) }
-    androidx.compose.runtime.LaunchedEffect(Unit) {
-        others = SharedSetup.fromOthers(context)
-        locked = SharedSetup.lockedOut(context)
-    }
-    PageHead("Obsidian", "Send highlights and notes to your vault. Each note links back to its verse.")
-    val o = others.firstOrNull()
-    if (folder == null && o != null) {
-        androidx.compose.material3.Button(onClick = { pickAt(android.net.Uri.parse(o.folder)) }, modifier = Modifier.fillMaxWidth()) {
-            Text("Use “${o.vault.ifBlank { "your vault" }}”, like ${o.app.title}")
-        }
-        Note("Android opens the folder picker at that vault. Tap Use this folder.")
-    } else if (folder == null && locked.isNotEmpty()) {
-        Note("${locked.joinToString(" and ") { it.title }} is on this phone but cannot share yet. Install Obsi Bible again (its newest version) to link them.")
-    }
-    Steps(
-        "Get Obsidian, if it is not on this phone." to SetupLinks.OBSIDIAN,
-        "Pick your vault folder below. Notes are then saved straight into it." to null,
-        "Optional: put note templates in a Templates folder. You can pick one each time you send." to SetupLinks.OBSIDIAN_TEMPLATES,
-    )
-    Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(scheme.surfaceContainer).clickable(onClick = pick).padding(18.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(folder ?: "No vault folder picked", style = MaterialTheme.typography.titleMedium)
-            Text(if (folder != null) "Notes are saved here." else "Tap to pick it.", color = scheme.onSurfaceVariant)
-        }
-        if (folder != null) Icon(Icons.Rounded.Check, "Picked", tint = Color(0xFF4ADE80)) else Text("Pick", fontWeight = FontWeight.SemiBold)
-    }
-}
-
-@Composable
-private fun DonePage() {
-    val app = LocalApp.current
-    val s by app.settings.state.collectAsState()
-    val installed by app.bibles.installed.collectAsState()
-    val scheme = MaterialTheme.colorScheme
-    PageHead("You are set", "Here is what is ready.")
-    Ready("Bibles", installed.joinToString(" · ") { it.abbreviation }, true)
-    Ready("ESV", if (s.esvKey.isNotBlank()) "Key added" else "Not set up", s.esvKey.isNotBlank())
-    val msg = s.onlineBibles.any { it.split('|').getOrNull(2)?.contains("Message", true) == true }
-    Ready("The Message", if (msg) "Added" else "Not set up", msg)
-    Ready("Microsoft voices", if (s.cloudKey.isNotBlank()) "Key added" else "Not set up", s.cloudKey.isNotBlank())
-    Ready("Obsidian vault", if (s.vaultTree.isNotBlank()) "Picked" else "Not picked", s.vaultTree.isNotBlank())
-    Spacer(Modifier.height(16.dp))
-    Text("Open this guide again any time from Settings or Versions.", color = scheme.onSurfaceVariant)
 }
 
 @Composable

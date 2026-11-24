@@ -67,7 +67,7 @@
             </intent-filter>
         </activity-alias>
 
-        <receiver android:name=".update.InstallReceiver" android:exported="false" />
+        <receiver android:name="app.obsi.core.update.InstallReceiver" android:exported="false" />
 
         <service
             android:name=".audio.PlaybackService"

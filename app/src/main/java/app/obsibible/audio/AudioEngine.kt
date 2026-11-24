@@ -116,7 +116,7 @@ class AudioEngine(private val app: ObsiBibleApp) {
     private var timesEstimated = false
     private var pendingVerse = 0
 
-    private val _ui = MutableStateFlow(AudioUi(speed = app.settings.value.audioSpeed))
+    private val _ui = MutableStateFlow(AudioUi(speed = app.prefs.value.audioSpeed))
     val ui: StateFlow<AudioUi> = _ui.asStateFlow()
 
     val player: ExoPlayer = ExoPlayer.Builder(app)
@@ -131,7 +131,7 @@ class AudioEngine(private val app: ObsiBibleApp) {
     private var sleepJob: Job? = null
 
     init {
-        player.setPlaybackSpeed(app.settings.value.audioSpeed)
+        player.setPlaybackSpeed(app.prefs.value.audioSpeed)
         player.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 _ui.update { it.copy(playing = isPlaying) }
@@ -212,7 +212,7 @@ class AudioEngine(private val app: ObsiBibleApp) {
     }
 
     private fun pickSource(bible: String): Source {
-        val s = app.settings.value
+        val s = app.prefs.value
         val (kind, id) = s.audioSource.split(':', limit = 2).let { it[0] to it.getOrElse(1) { "" } }
         return when {
             kind == "narrator" && Narrators.forBible(bible).isNotEmpty() ->
@@ -319,13 +319,13 @@ class AudioEngine(private val app: ObsiBibleApp) {
 
     fun setSpeed(x: Float) {
         player.setPlaybackSpeed(x)
-        app.settings.update { it.copy(audioSpeed = x) }
+        app.prefs.update { it.copy(audioSpeed = x) }
         _ui.update { it.copy(speed = x) }
     }
 
     /** Changes the voice. If something is playing, it starts again in the new voice at the same verse. */
     fun setSource(id: String) {
-        app.settings.update { it.copy(audioSource = id) }
+        app.prefs.update { it.copy(audioSource = id) }
         val u = _ui.value
         if (u.active && u.ref != null) play(u.bible, u.ref, u.verse)
     }
@@ -381,7 +381,7 @@ class AudioEngine(private val app: ObsiBibleApp) {
             return
         }
         val next = u.ref?.next()
-        if (app.settings.value.autoContinue && next != null) {
+        if (app.prefs.value.autoContinue && next != null) {
             play(u.bible, next) // online Bibles load the next chapter first
             // Tell the reader once, so it can turn the page if it was showing the chapter that ended.
             turnedTo.value = Turn(u.ref, next)
@@ -398,7 +398,7 @@ class AudioEngine(private val app: ObsiBibleApp) {
         if ((src is Source.Recorded && offline) || src is Source.Cloud) {
             val msg = if (src is Source.Recorded) "No internet. Using the phone voice." else (cause ?: "The Microsoft voice failed.") + " Using the phone voice."
             val ref = u.ref ?: return
-            start(u.bible, ref, u.verse, Source.Phone(app.settings.value.phoneVoice))
+            start(u.bible, ref, u.verse, Source.Phone(app.prefs.value.phoneVoice))
             _ui.update { it.copy(error = msg) }
             return
         }
@@ -543,7 +543,7 @@ class AudioEngine(private val app: ObsiBibleApp) {
             if (uri.scheme == "esv") {
                 // Runs on the player's loading thread, so the network call is allowed here.
                 val ref = Ref.fromKey(uri.lastPathSegment ?: "") ?: throw IOException("Unknown chapter.")
-                val key = app.settings.value.esvKey
+                val key = app.prefs.value.esvKey
                 if (key.isBlank()) throw IOException("Add your ESV key in Versions.")
                 val where = EsvApi.audioLocation(key, ref)
                 current = stream

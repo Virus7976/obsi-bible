@@ -7,7 +7,6 @@ import app.obsibible.bible.Ref
 import app.obsibible.bible.Seg
 import app.obsibible.obsidian.Clip
 import app.obsibible.obsidian.NoteBuilder
-import app.obsibible.obsidian.VaultTemplates
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -53,34 +52,6 @@ class OnlineTest {
         assertEquals("", n.timingUrl(Ref("JHN", 3)))
     }
 
-    @Test fun mergeTagsKeepsOldAndAddsNew() {
-        val inline = "---\ntitle: x\ntags: [bible, faith]\n---\nbody\n"
-        assertEquals("---\ntitle: x\ntags:\n  - bible\n  - faith\n  - hope\n---\nbody\n", VaultTemplates.mergeTags(inline, listOf("#hope", "faith")))
-        val block = "---\ntags:\n  - a\ncreated: 1\n---\n"
-        assertEquals("---\ntags:\n  - a\n  - b\ncreated: 1\n---\n", VaultTemplates.mergeTags(block, listOf("b")))
-        val none = "---\ntitle: x\n---\nbody"
-        assertEquals("---\ntitle: x\ntags:\n  - b\n---\nbody", VaultTemplates.mergeTags(none, listOf("b")))
-        assertEquals("---\ntags:\n  - b\n---\nbody", VaultTemplates.mergeTags("body", listOf("b")))
-        assertEquals("body", VaultTemplates.mergeTags("body", emptyList()))
-    }
-
-    @Test fun momentFormats() {
-        val at = Calendar.getInstance().apply { set(2026, Calendar.NOVEMBER, 3, 9, 5, 0) }.timeInMillis
-        assertEquals("2026-11-03", VaultTemplates.moment("YYYY-MM-DD", at))
-        assertEquals("Tuesday, November 3rd", VaultTemplates.moment("dddd, MMMM Do", at))
-        assertEquals("09:05 AM", VaultTemplates.moment("HH:mm A", at))
-        assertEquals("Week of 3", VaultTemplates.moment("[Week of] D", at))
-    }
-
-    @Test fun vaultTemplateGetsVerseAndDate() {
-        val at = Calendar.getInstance().apply { set(2026, Calendar.NOVEMBER, 3, 9, 5, 0) }.timeInMillis
-        val t = VaultTemplates.prepare("---\ndate: {{date:YYYY-MM-DD}}\ntags:\n---\n# {{title}}\n", at)
-        assertTrue(t.contains("date: 2026-11-03"))
-        assertTrue(t.contains(VaultTemplates.BIBLE_BLOCK))
-        val own = VaultTemplates.prepare("{{text}}", at)
-        assertFalse(own.contains("[!bible]"))
-    }
-
     @Test fun youVersionHtmlWithDataUsfm() {
         val html = "<div class=\"s1\"><span class=\"heading\">The Word Became Flesh</span></div>" +
             "<div class=\"p\"><span class=\"verse v1\" data-usfm=\"JHN.1.1\"><span class=\"label\">1</span><span class=\"content\">In the beginning was the Word,</span></span>" +
@@ -103,27 +74,6 @@ class OnlineTest {
         val v = app.obsibible.bible.YouVersion.parseHtml(Ref("JHN", 3), html).verses().toMap()
         assertEquals(listOf(16, 17), v.keys.toList())
         assertEquals("For God so loved the world,", v[16]!!.trim())
-    }
-
-    @Test fun settingsSearchFindsByWords() {
-        val m = app.obsibible.ui.SettingsSearch::matches
-        assertTrue(m("", "anything"))
-        assertTrue(m("msg", "ESV The Message MSG key"))
-        assertTrue(m("dark the", "Look appearance theme dark"))
-        assertTrue(m("youv", "API.Bible YouVersion key"))
-        assertFalse(m("vault", "Look appearance theme dark"))
-    }
-
-    @Test fun linksAndTagsReachTheNote() {
-        val clip = Clip(Ref("JHN", 3, 16), "BSB", "Berean Standard Bible", "For God so loved the world", tags = listOf("love"), links = listOf("[[Grace]]"))
-        val t = VaultTemplates.prepare("---\ntags: [study]\n---\n# {{title}}\n")
-        val n = NoteBuilder.build(clip, append = false, folder = "Bible", template = t)
-        assertTrue(n.markdown.contains("# John 3:16"))
-        assertTrue(n.markdown.contains("  - study\n  - love"))
-        assertTrue(n.markdown.trimEnd().endsWith("[[Grace]]"))
-        val placed = NoteBuilder.build(clip, append = false, folder = "", template = "Links: {{links}}\n{{text}}")
-        assertTrue(placed.markdown.contains("Links: [[Grace]]"))
-        assertFalse(placed.markdown.trimEnd().endsWith("world\n[[Grace]]"))
     }
 
     @Test fun messageIsFoundAndSummed() {
